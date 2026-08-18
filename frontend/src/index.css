@@ -1,0 +1,165 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Serif SC", sans-serif;
+  background: #f6f2ec;
+  color: #38342e;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+}
+
+/* 古风卡片质感 */
+.paper-card {
+  background: linear-gradient(180deg, #fffdf8 0%, #faf6ee 100%);
+  border: 1px solid #e8dfcc;
+  border-radius: 14px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 2px 8px rgba(90,70,40,0.06);
+}
+
+/* 朱砂按钮 */
+.btn-zhusha {
+  background: linear-gradient(135deg, #a4441b 0%, #c55a1e 100%);
+  color: #fff8e7;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-weight: 600;
+  box-shadow: 0 3px 0 #84381e, 0 4px 10px rgba(197,90,30,0.25);
+  transition: all .15s ease;
+}
+.btn-zhusha:active { transform: translateY(2px); box-shadow: 0 1px 0 #84381e, 0 2px 4px rgba(197,90,30,0.2); }
+.btn-zhusha:disabled { opacity: .6; }
+
+/* 墨色按钮 */
+.btn-mo {
+  background: linear-gradient(135deg, #413c35 0%, #38342e 100%);
+  color: #f7f2e7;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-weight: 600;
+  box-shadow: 0 2px 0 #2a2620, 0 3px 8px rgba(0,0,0,0.15);
+}
+.btn-mo:active { transform: translateY(1px); }
+
+/* 输入框 */
+.field {
+  background: #fffdf8;
+  border: 1px solid #e0d4bd;
+  border-radius: 10px;
+  padding: 10px 14px;
+  width: 100%;
+  font-size: 15px;
+  color: #38342e;
+  transition: all .2s;
+}
+.field:focus {
+  outline: none;
+  border-color: #c55a1e;
+  box-shadow: 0 0 0 3px rgba(197,90,30,0.12);
+}
+.field-label {
+  display: block;
+  font-size: 12px;
+  color: #796e5b;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+/* 顶部祥云渐变条 */
+.top-bar {
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 0%, rgba(212,113,40,0.18), transparent 60%),
+    radial-gradient(ellipse 80% 60% at 90% 0%, rgba(164,68,27,0.18), transparent 60%),
+    linear-gradient(180deg, #84381e 0%, #6c301b 100%);
+  color: #fde68a;
+}
+
+/* 四柱大字 */
+.pillar-big {
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 2px;
+}
+
+/* 标签 */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* 五行色 */
+.wx-jin { color: #6e7680; background: #eef1f5; border: 1px solid #d4d9e0; }
+.wx-mu { color: #2a6f3a; background: #e6f4ea; border: 1px solid #b8dcc2; }
+.wx-shui { color: #1f5fa8; background: #e4efff; border: 1px solid #b4cff0; }
+.wx-huo { color: #a53320; background: #fde7e2; border: 1px solid #f2b8ab; }
+.wx-tu { color: #80551f; background: #faf0d9; border: 1px solid #ecd8a6; }
+
+/* 滚动条隐藏 */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+/* 印章 */
+.seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #a4441b;
+  border: 2px solid #a4441b;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-family: "Noto Serif SC", serif;
+  font-weight: 700;
+  transform: rotate(-3deg);
+  background: rgba(255,255,255,0.7);
+}
+
+/* 卦象符号 */
+.hex-yao {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.hex-bar {
+  height: 8px;
+  border-radius: 2px;
+  background: #38342e;
+}
+.hex-bar.broken { width: 14px; }
+.hex-bar.full { width: 34px; }
+
+/* 动爻标记 */
+.yao-dong {
+  position: relative;
+}
+.yao-dong::after {
+  content: '●';
+  position: absolute;
+  right: -14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #c55a1e;
+  font-size: 10px;
+}
+
+/* 响应式：移动端隐藏的桌面元素 */
+@media (max-width: 640px) {
+  .desktop-only { display: none !important; }
+}

@@ -1,0 +1,14 @@
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+frontend/.vite/
+.env
+.env.*
+**/.env
+**/.env.*
+backend/src/data/*.db
+backend/src/data/*.db-*
+*.log
+.DS_Store
+.vscode/
