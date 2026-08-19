@@ -174,18 +174,6 @@ export default function Vip() {
           )}
         </div>
       )}
-
-      {/* 支付说明 */}
-      <div className="paper-card p-4">
-        <div className="font-bold text-[14px] text-ink-900 mb-2">🔒 支付与权益说明</div>
-        <ul className="text-[12px] text-ink-600 space-y-1.5 leading-relaxed">
-          <li>• <b>演示环境</b>：本站点当前为演示版，下单后 5 秒自动到账，不发生真实扣款。</li>
-          <li>• <b>生产环境</b>：上线时可接入<b>微信支付/支付宝</b>官方接口，付款成功后通过回调开通权益。</li>
-          <li>• <b>额度规则</b>：会员/次卡按「总 AI 解读次数（ai_credits）」扣减，不再每日重置，永久有效直到用完为止。</li>
-          <li>• <b>免费用户</b>：本站 AI 深度解读为付费功能，需先开通会员或购买单次解读卡。</li>
-          <li>• <b>后台管理</b>：管理员账号登录后，可在 <code>/admin</code> 页面手动赠会员/赠额度/看订单。</li>
-        </ul>
-      </div>
     </div>
   )
 }
