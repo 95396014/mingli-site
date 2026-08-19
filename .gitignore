@@ -7,6 +7,18 @@ frontend/.vite/
 .env.*
 **/.env
 **/.env.*
+# 证书 / 私钥 / 凭证（绝对不能进 Git）
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+credentials*.json
+*.credentials
+*secret*
+secrets/
+keys/
 backend/src/data/*.db
 backend/src/data/*.db-*
 *.log
