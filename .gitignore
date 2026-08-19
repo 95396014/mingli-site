@@ -7,6 +7,9 @@ frontend/.vite/
 .env.*
 **/.env
 **/.env.*
+# 豁免：.env.example 只是模板（无真实密钥），可以提交给团队参考
+!.env.example
+!**/.env.example
 # 证书 / 私钥 / 凭证（绝对不能进 Git）
 *.pem
 *.key
