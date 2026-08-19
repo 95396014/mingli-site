@@ -37,8 +37,12 @@ export default function Profile() {
         {quota && (
           <div className="grid grid-cols-3 gap-2 mt-4">
             <div className="bg-white/10 backdrop-blur rounded-xl p-2.5 text-center border border-white/20">
-              <div className="text-[10px] opacity-80">免费剩余</div>
-              <div className="font-bold text-[18px]">{quota.freeRemain}<span className="text-[11px] opacity-80 ml-0.5">/ {quota.freeDailyLimit}</span></div>
+              <div className="text-[10px] opacity-80">免费体验</div>
+              <div className="font-bold text-[18px]">
+                {quota.freeEnabled
+                  ? <>{quota.freeRemain}<span className="text-[11px] opacity-80 ml-0.5">/ {quota.freeDailyLimit}</span></>
+                  : '未开放'}
+              </div>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-xl p-2.5 text-center border border-white/20">
               <div className="text-[10px] opacity-80">AI 额度</div>

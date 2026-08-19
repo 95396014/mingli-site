@@ -121,9 +121,16 @@ function initDB() {
         amount INTEGER NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
         pay_method TEXT,
+        transaction_id TEXT,
+        code_url TEXT,
         paid_at INTEGER,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER
       )`)
+      // 迁移：检查并补充新字段（兼容旧数据库）
+      try { db.run('ALTER TABLE orders ADD COLUMN transaction_id TEXT') } catch (e) { /* 已存在 */ }
+      try { db.run('ALTER TABLE orders ADD COLUMN code_url TEXT') } catch (e) { /* 已存在 */ }
+      try { db.run('ALTER TABLE orders ADD COLUMN updated_at INTEGER') } catch (e) { /* 已存在 */ }
       db.run(`CREATE TABLE IF NOT EXISTS ai_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,

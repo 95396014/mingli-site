@@ -3,8 +3,7 @@ const axios = require('axios')
 
 const router = express.Router()
 
-const FREE_LIMIT = parseInt(process.env.FREE_DAILY_LIMIT || '3')
-const VIP_LIMIT = parseInt(process.env.VIP_DAILY_LIMIT || '50')
+const FREE_LIMIT = parseInt(process.env.FREE_DAILY_LIMIT || '0')
 
 const SYSTEM_PROMPTS = {
   bazi: `你是一位拥有30年实战经验的资深八字命理师，风格参考古籍《三命通会》《滴天髓》《穷通宝鉴》，兼通现代格局派与旺衰派。
@@ -25,9 +24,20 @@ const SYSTEM_PROMPTS = {
 
 function canUseAi(user) {
   if (user.is_admin) return { ok: true, type: 'admin' }
-  if (user.is_vip) return { ok: true, type: 'vip', limit: VIP_LIMIT }
+  // 会员用户：不再按"每日N次"限制，改为直接扣 ai_credits 额度（购买会员卡和次卡时叠加赠送）
+  if (user.is_vip) {
+    const credits = Number(user.ai_credits) || 0
+    if (credits <= 0) {
+      return { ok: false, reason: '会员额度已用完，请购买 AI 次卡或续费会员获取更多解读次数。' }
+    }
+    return { ok: true, type: 'vip', credits }
+  }
+  // 免费用户：默认 0 次（不允许免费使用）；可通过环境变量 FREE_DAILY_LIMIT 开放少量体验
   if ((user.free_daily_used || 0) >= FREE_LIMIT) {
-    return { ok: false, reason: `免费用户每日限 ${FREE_LIMIT} 次，今日已用完。开通会员解锁 ${VIP_LIMIT} 次/日。` }
+    if (FREE_LIMIT === 0) {
+      return { ok: false, reason: '本站 AI 深度解读为付费功能，请先开通会员或购买单次解读卡。' }
+    }
+    return { ok: false, reason: `免费体验每日限 ${FREE_LIMIT} 次，今日已用完。开通会员或购买次卡解锁更多解读。` }
   }
   return { ok: true, type: 'free', limit: FREE_LIMIT, used: user.free_daily_used || 0 }
 }
@@ -86,25 +96,36 @@ ${JSON.stringify(payload, null, 2)}`
     }
   }
 
+  // AI 调用成功后扣次
   const now = Date.now()
   if (auth.type === 'free') {
     db.prepare('UPDATE users SET free_daily_used = free_daily_used + 1, updated_at = ? WHERE id = ?').run(now, req.user.id)
+  } else if (auth.type === 'vip') {
+    db.prepare('UPDATE users SET ai_credits = MAX(0, ai_credits - 1), updated_at = ? WHERE id = ?').run(now, req.user.id)
   }
   db.prepare('INSERT INTO ai_logs (user_id,type,prompt,tokens_used,created_at) VALUES (?,?,?,?,?)')
     .run(req.user.id, type, JSON.stringify({ question, payloadType: type }).slice(0, 500), tokens, now)
 
-  const remain = auth.type === 'free'
-    ? Math.max(0, FREE_LIMIT - ((req.user.free_daily_used || 0) + 1))
-    : auth.type === 'vip' ? VIP_LIMIT : 9999
+  // 重新从 DB 拉一下额度，保证返回给前端是最新的
+  const updated = db.prepare('SELECT ai_credits, free_daily_used FROM users WHERE id = ?').get(req.user.id) || {}
+  const remain =
+    auth.type === 'free' ? Math.max(0, FREE_LIMIT - (((req.user.free_daily_used||0) + 1))) :
+    auth.type === 'vip' ? Math.max(0, Number(updated.ai_credits)||0) : 9999
 
-  res.json({ content, tokens, remain, authType: auth.type })
+  res.json({
+    content, tokens, remain, authType: auth.type,
+    aiCredits: Number(updated.ai_credits)||0,
+    freeUsed: Number(updated.free_daily_used)||0,
+  })
 })
 
 router.get('/quota', (req, res) => {
   const info = canUseAi(req.user)
   res.json({
     freeDailyLimit: FREE_LIMIT,
-    vipDailyLimit: VIP_LIMIT,
+    // vipDailyLimit 已取消，会员改为按 ai_credits 总额度扣减，不再每日重置
+    vipDailyLimit: null,
+    freeEnabled: FREE_LIMIT > 0,
     freeUsed: req.user.free_daily_used || 0,
     freeRemain: Math.max(0, FREE_LIMIT - (req.user.free_daily_used || 0)),
     isVip: !!req.user.is_vip,

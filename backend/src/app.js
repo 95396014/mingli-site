@@ -24,11 +24,11 @@ try { require('dotenv').config() } catch {}
 
   // 公开：会员套餐列表（价格与后端一致，避免前端显示价≠下单价）
   const VIP_PLANS = [
-    { id: 'month', name: '月度会员', price: 266, days: 30, credits: 0, desc: '每日 50 次 AI 深度解读 · 全功能开放' },
-    { id: 'quarter', name: '季度会员', price: 688, days: 90, credits: 200, desc: '每日 50 次 AI 深度解读 · 赠 200 次额外额度' },
-    { id: 'year', name: '年度会员', price: 1888, days: 365, credits: 500, desc: '每日 50 次 AI 深度解读 · 赠 500 次额外额度 · 优先客服' },
-    { id: 'per_use', name: '单次 AI 解读', price: 98, days: 0, credits: 1, desc: '无需会员，即时到账，永久有效' },
-  ]
+  { id: 'month', name: '月度会员', price: 266, days: 30, credits: 300, desc: '300 次 AI 深度解读 · 30 天会员特权 · 全功能开放' },
+  { id: 'quarter', name: '季度会员', price: 688, days: 90, credits: 1100, desc: '1100 次 AI 深度解读（含赠送 200 次）· 90 天会员特权' },
+  { id: 'year', name: '年度会员', price: 1888, days: 365, credits: 5000, desc: '5000 次 AI 深度解读（含赠送 1000 次）· 365 天会员特权 · 优先客服' },
+  { id: 'per_use', name: '单次 AI 解读', price: 98, days: 0, credits: 1, desc: '无需会员，即时到账，永久有效' },
+]
   app.get('/api/vip/plans', (req, res) => res.json({ plans: VIP_PLANS }))
 
   // 无需鉴权：认证相关

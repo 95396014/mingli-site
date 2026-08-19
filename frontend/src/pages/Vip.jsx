@@ -8,9 +8,10 @@ export default function Vip() {
   const [plans, setPlans] = useState([])
   const [pick, setPick] = useState('year')
   const [order, setOrder] = useState(null)
-  const [payStatus, setPayStatus] = useState('待支付…（演示模式 5 秒内自动到账）')
+  const [payStatus, setPayStatus] = useState('')
   const [loading, setLoading] = useState(false)
   const [poll, setPoll] = useState(false)
+  const [payMethod, setPayMethod] = useState('wxpay') // wxpay / demo
 
   useEffect(() => { (async () => { const {data} = await api.get('/vip/plans'); setPlans(data.plans) })() }, [])
 
@@ -20,26 +21,35 @@ export default function Vip() {
       try {
         const { data } = await api.get(`/vip/order/${order.orderNo}`)
         if (data.order.status === 'paid') {
-          setPayStatus('✅ 支付成功，会员/额度已到账')
+          setPayStatus('✅ 支付成功！会员/额度已到账')
           setPoll(false); clearInterval(timer)
           refreshUser()
         }
       } catch {}
-    }, 800)
+    }, 1500)
     return () => clearInterval(timer)
   }, [order, poll])
 
   async function buy() {
     setLoading(true)
+    setOrder(null); setPayStatus('')
     try {
-      const { data } = await api.post('/vip/order/create', { planId: pick })
+      const { data } = await api.post('/vip/order/create', { planId: pick, method: payMethod })
       setOrder(data); setPoll(true)
-      setPayStatus(data.payInfo?.tip || '支付中…')
+      if (data.payInfo?.method === 'wxpay') {
+        setPayStatus('请用微信扫描下方二维码完成支付（5分钟内有效）')
+      } else {
+        setPayStatus(data.payInfo?.tip || '支付中…')
+      }
     } catch (e) {
       alert(e.response?.data?.error || e.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  function cancelOrder() {
+    setOrder(null); setPoll(false); setPayStatus('')
   }
 
   return (
@@ -50,11 +60,11 @@ export default function Vip() {
         <div className="absolute right-0 top-0 opacity-20 text-[160px] leading-none font-song select-none -mr-2 -mt-4">✦</div>
         <div className="seal !text-white !border-white/70 !bg-white/10 mb-2">VIP</div>
         <div className="font-song font-bold text-[22px] leading-tight">问命阁 · 至尊会员</div>
-        <div className="text-[12px] mt-1.5 opacity-90">30+ 年实战命理师调教 Prompt · 每日 50 次深度解读</div>
+        <div className="text-[12px] mt-1.5 opacity-90">30+ 年实战命理师调教 Prompt · 海量 AI 解读额度随买随用</div>
         <div className="grid grid-cols-3 gap-2 mt-4">
           {[
-            {t:'每日 50 次',d:'AI 深度解读'},
-            {t:'全功能',d:'八字 / 梅花无限制'},
+            {t:'总额度',d:'月/季/年卡递增赠送'},
+            {t:'全功能',d:'八字 / 梅花 / 后续板块'},
             {t:'优先',d:'客服优先响应'}
           ].map(i=>(
             <div key={i.t} className="bg-white/10 backdrop-blur rounded-xl p-2.5 border border-white/20">
@@ -82,7 +92,7 @@ export default function Vip() {
                 到期：<b>{dayjs(user.vip_expire_at).format('YYYY-MM-DD')}</b>
               </div>
             )}
-            <div className="text-[12px] text-ink-600 mt-1">额外 AI 额度：<b className="text-primary-700">{user.ai_credits||0}</b> 次</div>
+            <div className="text-[12px] text-ink-600 mt-1">AI 解读剩余额度：<b className="text-primary-700">{user.ai_credits||0}</b> 次</div>
           </div>
         </div>
       </div>
@@ -111,6 +121,25 @@ export default function Vip() {
         ))}
       </div>
 
+      {/* 支付方式选择 */}
+      <div className="paper-card p-3 mb-3">
+        <div className="font-bold text-[14px] text-ink-900 mb-2">💳 支付方式</div>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={()=>{setPayMethod('wxpay'); cancelOrder()}}
+            className={`rounded-xl p-3 text-center border-2 transition ${payMethod==='wxpay'?'border-green-500 bg-green-50':'border-ink-200 bg-white'}`}>
+            <div className="text-[20px]">💚</div>
+            <div className="font-bold text-[13px] mt-1">微信扫码支付</div>
+            <div className="text-[10px] text-ink-500 mt-0.5">Native 二维码</div>
+          </button>
+          <button onClick={()=>{setPayMethod('demo'); cancelOrder()}}
+            className={`rounded-xl p-3 text-center border-2 transition ${payMethod==='demo'?'border-primary-500 bg-primary-50':'border-ink-200 bg-white'}`}>
+            <div className="text-[20px]">⚡</div>
+            <div className="font-bold text-[13px] mt-1">演示支付</div>
+            <div className="text-[10px] text-ink-500 mt-0.5">5 秒自动到账</div>
+          </button>
+        </div>
+      </div>
+
       <button className="btn-zhusha w-full mb-3" onClick={buy} disabled={loading}>
         {loading?'下单中…':`立即开通 ${plans.find(p=>p.id===pick)?.name || ''}`}
       </button>
@@ -121,7 +150,28 @@ export default function Vip() {
             <div className="font-bold text-[14px] text-ink-900">订单：{order.orderNo}</div>
             <div className="tag wx-tu">¥{order.amount}</div>
           </div>
-          <div className="text-[12px] text-ink-600">{payStatus}</div>
+          <div className="text-[12px] text-ink-600 mb-2">{payStatus}</div>
+
+          {/* 微信扫码：显示二维码 */}
+          {order.payInfo?.method === 'wxpay' && order.payInfo?.qr_url && (
+            <div className="mt-3 flex flex-col items-center">
+              <div className="bg-white rounded-xl p-3 border-2 border-green-200 shadow-sm">
+                <img src={order.payInfo.qr_url} alt="微信支付二维码" className="w-[200px] h-[200px]" />
+              </div>
+              <div className="text-[11px] text-ink-500 mt-2">📱 打开微信「扫一扫」付款</div>
+              <button onClick={cancelOrder} className="mt-3 text-[12px] text-ink-400 underline">
+                取消订单 / 换其他方式
+              </button>
+            </div>
+          )}
+
+          {/* 演示模式：显示倒计时 */}
+          {order.payInfo?.method === 'demo' && (
+            <div className="mt-2 text-center">
+              <div className="text-[11px] text-ink-500">⏳ {payStatus || '等待自动到账…'}</div>
+              {!poll && <button onClick={cancelOrder} className="mt-2 text-[12px] text-ink-400 underline">重新下单</button>}
+            </div>
+          )}
         </div>
       )}
 
@@ -131,7 +181,8 @@ export default function Vip() {
         <ul className="text-[12px] text-ink-600 space-y-1.5 leading-relaxed">
           <li>• <b>演示环境</b>：本站点当前为演示版，下单后 5 秒自动到账，不发生真实扣款。</li>
           <li>• <b>生产环境</b>：上线时可接入<b>微信支付/支付宝</b>官方接口，付款成功后通过回调开通权益。</li>
-          <li>• <b>会员权益</b>：每日 0 点重置免费次数（50次/日），AI额度包不限时间，永久有效。</li>
+          <li>• <b>额度规则</b>：会员/次卡按「总 AI 解读次数（ai_credits）」扣减，不再每日重置，永久有效直到用完为止。</li>
+          <li>• <b>免费用户</b>：本站 AI 深度解读为付费功能，需先开通会员或购买单次解读卡。</li>
           <li>• <b>后台管理</b>：管理员账号登录后，可在 <code>/admin</code> 页面手动赠会员/赠额度/看订单。</li>
         </ul>
       </div>

@@ -1,7 +1,8 @@
 // 八字精准计算工具 - 基于 lunar-javascript
 // 输出：四柱、藏干、十神、纳音、空亡、五行统计、旺衰、大运、流年
+// 支持：公历/农历切换、夏令时开关、真太阳时（按经度修正）
 
-import { Solar } from 'lunar-javascript'
+import { Solar, Lunar } from 'lunar-javascript'
 
 // ===== 基础常量 =====
 export const GAN = ['甲','乙','丙','丁','戊','己','庚','辛','壬','癸']
@@ -91,11 +92,68 @@ export function kongWangOf(gan, zhi) {
   return [k1, k2]
 }
 
+// 中国历史上实际执行过夏令时的时段（问真八字等主流排盘软件均按此规则）
+// 来源：中华人民共和国 1986-1991 年夏季实行的北京夏令时（非 2000 年后的）
+export const CN_DST_RANGES = [
+  { start: '1986-05-04 02:00', end: '1986-09-14 02:00' },
+  { start: '1987-04-12 02:00', end: '1987-09-13 02:00' },
+  { start: '1988-04-17 02:00', end: '1988-09-11 02:00' },
+  { start: '1989-04-16 02:00', end: '1989-09-17 02:00' },
+  { start: '1990-04-15 02:00', end: '1990-09-16 02:00' },
+  { start: '1991-04-21 02:00', end: '1991-09-15 02:00' },
+]
+
+export function withinChinaDst(ts /* Date 或 ms */) {
+  const d = ts instanceof Date ? ts : new Date(ts)
+  const t = d.getTime()
+  for (const r of CN_DST_RANGES) {
+    // 解析到本地时区 Date 再转 ms（输入输出均按本地无时区日期字面值）
+    const [sd, st] = r.start.split(' ')
+    const [ed, et] = r.end.split(' ')
+    const [sy,smo,sda] = sd.split('-').map(Number)
+    const [sh, smin]  = st.split(':').map(Number)
+    const [ey,emo,eda] = ed.split('-').map(Number)
+    const [eh, emin]  = et.split(':').map(Number)
+    const s = new Date(sy, smo-1, sda, sh, smin).getTime()
+    const e = new Date(ey, emo-1, eda, eh, emin).getTime()
+    if (t >= s && t < e) return true
+  }
+  return false
+}
+
 // 月令：以节气定月支 -> lunar-javascript 已处理
-export function calculateBazi({ year, month, day, hour, minute = 0, second = 0, gender = 0, lng = 120 }) {
-  // 真太阳时修正
-  const tzAdjustMin = (lng - 120) * 4
-  const d = new Date(year, month - 1, day, hour, minute, second || 0)
+export function calculateBazi({
+  year, month, day, hour, minute = 0, second = 0, gender = 0,
+  lng = 120, // 经度（真太阳时修正用）
+  calendar = 'solar', // 'solar' 公历 / 'lunar' 农历
+  lunarLeap = false, // 农历是否闰月（calendar=lunar 时生效）
+  dstSwitch = 'auto', // 'auto' 自动识别中国夏令时; 'on' 强制加 1h; 'off' 关闭
+  name = '', genderText = '', birthdayRemark = '', place = '',
+}) {
+  // ====== Step 1：按日历类型把输入先转成公历 Date（本地时间字面值） ======
+  let d
+  if (calendar === 'lunar') {
+    // lunar-javascript 的 Lunar.fromYmd 支持农历 year/month/day + 闰月标识
+    const lunar = Lunar.fromYmd(+year, +month, +day, !!lunarLeap ? +month : 0)
+    const solar = lunar.getSolar()
+    d = new Date(solar.getYear(), solar.getMonth()-1, solar.getDay(), +hour, +minute, +second || 0)
+  } else {
+    d = new Date(+year, +month - 1, +day, +hour, +minute, +second || 0)
+  }
+
+  // ====== Step 2：夏令时还原（用户填的是"当年时钟上显示的夏令时时间"，排盘要还原到标准时） ======
+  let dstApplied = false
+  let diffMin = 0
+  if (dstSwitch === 'on') { diffMin = -60; dstApplied = true }
+  else if (dstSwitch === 'auto' && withinChinaDst(d)) {
+    diffMin = -60; dstApplied = true
+  }
+  if (diffMin) d.setMinutes(d.getMinutes() + diffMin)
+
+  // ====== Step 3：真太阳时（经度修正）======
+  // 中国统一时区东 8 区 = 东经 120°。每相差 1° = 地方时差 4 分钟
+  const lngVal = Number(lng) || 120
+  const tzAdjustMin = (lngVal - 120) * 4
   d.setMinutes(d.getMinutes() + tzAdjustMin)
 
   const solar = Solar.fromDate(d)
@@ -197,6 +255,11 @@ export function calculateBazi({ year, month, day, hour, minute = 0, second = 0, 
     })
   })
 
+  // 格局：以月令为核心，看月令藏干 + 天干透出
+  const gejuInfo = gejuOf(yearGan, monthGan, monthZhi, dayGan, timeGan)
+  // 用神喜忌：基于日主旺衰做基础判断（简化版，够用）
+  const yongShen = yongShenOf(wangLevel, meWX, monthWX, shiShenCount)
+
   // 大运 & 流年（lunar-javascript）
   const yun = ec.getYun(gender === 0 ? 1 : 0) // male=1, female=0
   const dayunListRaw = yun.getDaYun() || []
@@ -221,17 +284,31 @@ export function calculateBazi({ year, month, day, hour, minute = 0, second = 0, 
 
   return {
     pillars, dayGan, dayZhi,
+    // ====== 基础信息 ======
+    meta: {
+      name: name || '',
+      genderText: genderText || (gender === 0 ? '乾造 · 男' : '坤造 · 女'),
+      place: place || '',
+      birthdayRemark: birthdayRemark || '',
+      calendar,
+      lunarLeap: !!lunarLeap,
+      dstSwitch,
+      dstApplied,
+      lng: lngVal,
+    },
     shengXiao: lunar.getYearShengXiao(),
     lunarStr: `${lunar.getYearInChinese()}年${lunar.getMonthInChinese()}月${lunar.getDayInChinese()}日`,
     solarStr: `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')} ${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`,
     trueSolar: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`,
     tzAdjustMin: Math.round(tzAdjustMin),
+    dstAdjustMin: dstApplied ? -60 : 0,
     gender: gender === 0 ? '男' : '女',
     wxScore, wxPercent, wxDetail,
     monthWX, wangStatus,
     deLingScore, deDiScore, deZhuScore, totalWangScore, wangLevel,
     dayKong, yearKong,
     shiShenCount,
+    geju: gejuInfo, yongShen: yongShen,
     qiYunSui, qiYunDate,
     daYunList,
     solarTerm: (typeof lunar.getJieQi === 'function') ? (lunar.getJieQi()?.getName?.() || lunar.getJieQi() || '') : '',
@@ -249,6 +326,91 @@ function wangOf(dayGan, monthWX) {
   if (SHENG_KE[me].beKe === monthWX) return { label:'囚', note:'克我者囚，气被困' }
   if (SHENG_KE[me].ke === monthWX) return { label:'死', note:'我克者死，气衰竭' }
   return { label:'平', note:'平和' }
+}
+
+// 简易格局判断：以月令为核心 + 天干透出（子平真诠简化版）
+// 返回 { main, detail, desc }
+function gejuOf(yearGan, monthGan, monthZhi, dayGan, timeGan) {
+  const cang = ZHI_CANGGAN[monthZhi] || []
+  const tianGan = [ { who:'年', g:yearGan }, { who:'月', g:monthGan }, { who:'时', g:timeGan } ]
+  function touChu(ganList /* 要找的藏干十神 */) {
+    // 月令藏干某气对应十神
+    const ss = ganList.map(g => ({ g, ss: shiShenOfGan(dayGan, g.g) }))
+    // 看对应十神是否在年/月/时干透出（含月干本身）
+    const tou = tianGan.filter(tg => ganList.some(c => shiShenOfGan(dayGan, c.g) === shiShenOfGan(dayGan, tg.g)))
+    return { ss, tou }
+  }
+
+  // 取月支本气十神作为主格局
+  const benQi = cang[0]
+  const mainSS = benQi ? shiShenOfGan(dayGan, benQi.g) : null
+  // 是否透出
+  const touTianGan = tianGan.filter(tg => shiShenOfGan(dayGan, tg.g) === mainSS)
+  const main = mainSS ? `${mainSS}格` : '月令取格不明显'
+
+  // 其它兼格
+  const jian = []
+  if (mainSS === '正官' || mainSS === '七杀') {
+    // 官杀是否有印
+    const youYin = tianGan.some(tg => ['正印','偏印'].includes(shiShenOfGan(dayGan, tg.g)))
+    if (youYin && mainSS === '七杀') jian.push('杀印相生')
+    if (youYin && mainSS === '正官') jian.push('官印相生')
+  }
+  if ((mainSS === '食神' || mainSS === '伤官') && tianGan.some(tg => ['七杀','正官'].includes(shiShenOfGan(dayGan, tg.g)))) {
+    jian.push('食伤制杀')
+  }
+  if (['偏财','正财'].includes(mainSS) && tianGan.some(tg => ['七杀','正官'].includes(shiShenOfGan(dayGan, tg.g)))) {
+    jian.push('财生官杀')
+  }
+  if (['正印','偏印'].includes(mainSS) && tianGan.some(tg => ['食神','伤官'].includes(shiShenOfGan(dayGan, tg.g)))) {
+    jian.push('枭神夺食（或印生食伤）')
+  }
+
+  let desc = ''
+  desc += `月令月支【${monthZhi}】，本气藏干【${benQi?.g}】→ 取为 ${main}。`
+  if (touTianGan.length) desc += ` 天干透出：${touTianGan.map(t=>t.who+'干'+t.g).join('、')}（有力）。`
+  else desc += ` 天干未透出，藏而不露。`
+  if (jian.length) desc += ` 兼看：${jian.join(' / ')}。`
+
+  return {
+    main,
+    sub: jian,
+    detail: desc,
+    isTouChu: touTianGan.length > 0,
+    touChu: touTianGan,
+  }
+}
+
+// 用神喜忌：基于日主旺衰 + 月令
+// 返回 { yong, xi, ji, note }
+function yongShenOf(wangLevel, meWX, monthWX, shiShenCount) {
+  // 同类=比劫；生我=印枭；我生=食伤；我克=财；克我=官杀
+  let yong = [], xi = [], ji = []
+  let note = ''
+  if (wangLevel === '偏旺' || wangLevel === '略旺') {
+    // 身旺：宜克（官杀）、泄（食伤）、耗（财）→ 此三者为用神/喜神；忌生扶（印比）
+    yong = ['官杀（克身）']
+    xi   = ['食伤（泄秀）', '财星（耗身）']
+    ji   = ['比劫（帮身）', '印枭（生身）']
+    note = `日主${meWX}${wangLevel}，当以克、泄、耗为先：首取官杀制身为用神，食伤泄秀、财星耗身皆为喜；忌再见比劫帮身、印枭生扶则更旺而失衡。`
+  } else if (wangLevel === '偏弱' || wangLevel === '略弱') {
+    // 身弱：宜生（印）、扶（比劫）→ 用神；忌克泄耗
+    yong = ['印枭（生身）']
+    xi   = ['比劫（帮身）']
+    ji   = ['官杀（克身）', '食伤（泄身）', '财星（耗身）']
+    note = `日主${meWX}${wangLevel}，当以生扶为先：首取印枭生身为用神，比劫帮身为喜；忌见官杀来克、食伤泄气、财星耗身，则雪上加霜。`
+  } else {
+    // 中和：一般取月令相关为用，或财官印俱全取清者
+    yong = [monthWX ? `月令${monthWX}（顺势）` : '官杀 / 财星']
+    xi   = ['财星（流通）', '印星（护身）']
+    ji   = ['偏气过多 / 战克太烈']
+    note = `日主${meWX}中和，无大过不及，宜取月令顺势而用；局中以流通平衡为贵，喜财官印相辅，忌偏气独旺或刑冲战克。`
+  }
+  // 调候：如果月支是冬夏，则水火既济优先（简单版）
+  if (monthWX === '水' || monthWX === '火') {
+    note += ` · 调候提示：生于${monthWX==='水'?'寒冬（水旺）':'盛夏（火旺）'}，以${monthWX==='水'?'火':'水'}调候为先，有时优先于扶抑。`
+  }
+  return { yong, xi, ji, note }
 }
 
 // 节气日期工具（给UI显示用）
