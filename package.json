@@ -1,0 +1,14 @@
+{
+  "name": "mingli-site",
+  "version": "1.0.0",
+  "description": "命理网站（八字+梅花易数）- 单服务部署（Express 托管前端 dist + /api 接口）",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "install:all": "npm --prefix frontend install --no-audit --no-fund && npm --prefix backend install --no-audit --no-fund",
+    "build": "npm --prefix frontend run build",
+    "start": "node backend/src/app.js"
+  }
+}
