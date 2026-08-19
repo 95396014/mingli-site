@@ -112,15 +112,15 @@ ${JSON.stringify(payload, null, 2)}`
   // AI 调用成功后扣次
   const now = Date.now()
   if (auth.type === 'free') {
-    await db.prepare('UPDATE users SET free_daily_used = free_daily_used + 1, updated_at = ? WHERE id = ?').run(now, req.user.id)
+    db.prepare('UPDATE users SET free_daily_used = free_daily_used + 1, updated_at = ? WHERE id = ?').run(now, req.user.id)
   } else if (auth.type === 'vip' || auth.type === 'paid') {
-    await db.prepare('UPDATE users SET ai_credits = MAX(0, ai_credits - 1), updated_at = ? WHERE id = ?').run(now, req.user.id)
+    db.prepare('UPDATE users SET ai_credits = MAX(0, ai_credits - 1), updated_at = ? WHERE id = ?').run(now, req.user.id)
   }
-  await db.prepare('INSERT INTO ai_logs (user_id,type,prompt,tokens_used,created_at) VALUES (?,?,?,?,?)')
+  db.prepare('INSERT INTO ai_logs (user_id,type,prompt,tokens_used,created_at) VALUES (?,?,?,?,?)')
     .run(req.user.id, type, JSON.stringify({ question, payloadType: type }).slice(0, 500), tokens, now)
 
   // 重新从 DB 拉一下额度，保证返回给前端是最新的
-  const updated = await db.prepare('SELECT ai_credits, free_daily_used FROM users WHERE id = ?').get(req.user.id) || {}
+  const updated = db.prepare('SELECT ai_credits, free_daily_used FROM users WHERE id = ?').get(req.user.id) || {}
   const remain =
     auth.type === 'free' ? Math.max(0, FREE_LIMIT - (((req.user.free_daily_used||0) + 1))) :
     (auth.type === 'admin' ? 9999 : Math.max(0, Number(updated.ai_credits)||0))
