@@ -133,17 +133,57 @@ function initDB() {
         created_at INTEGER NOT NULL
       )`)
 
-      // 初始化管理员
-      const adminName = process.env.ADMIN_USERNAME || 'admin'
-      const adminPwd = process.env.ADMIN_PASSWORD || 'admin123'
+      // 初始化管理员：安全策略
+      // 1) 仅当环境变量显式设置 ADMIN_USERNAME + ADMIN_PASSWORD 时，才自动创建/重置管理员账号。
+      // 2) 如果 Railway/Vercel 没有配置这两个变量，就不创建默认 admin/admin123，
+      //    避免公开部署后被别人用默认弱密码登录后台。
+      // 3) 生产日志永远不打印密码明文，只打印用户名。
+      const adminName = process.env.ADMIN_USERNAME
+      const adminPwd = process.env.ADMIN_PASSWORD
       const bcrypt = require('bcryptjs')
-      const exist = db.prepare('SELECT id FROM users WHERE username = ?').get(adminName)
-      if (!exist) {
+      if (adminName && adminPwd) {
+        const exist = db.prepare('SELECT id FROM users WHERE username = ?').get(adminName)
         const now = Date.now()
         const hash = bcrypt.hashSync(adminPwd, 10)
-        db.prepare(`INSERT INTO users (username,password,nickname,is_vip,is_admin,ai_credits,created_at,updated_at)
-          VALUES (?,?,?,1,1,9999,?,?)`).run(adminName, hash, '超级管理员', now, now)
-        console.log(`[init] 管理员已创建: ${adminName} / ${adminPwd}`)
+        if (!exist) {
+          db.prepare(`INSERT INTO users (username,password,nickname,is_vip,is_admin,ai_credits,created_at,updated_at)
+            VALUES (?,?,?,1,1,9999,?,?)`).run(adminName, hash, '超级管理员', now, now)
+          console.log(`[init] 管理员账号已创建: ${adminName} (密码从环境变量读取，已加密入库，不写入日志)`)
+        } else {
+          // 环境变量里给了最新密码：允许通过重启 + 更新环境变量，静默刷新数据库里的旧密码 hash
+          db.prepare(`UPDATE users SET password=?, is_admin=1, is_vip=1, ai_credits=9999, nickname='超级管理员', updated_at=? WHERE username=?`)
+            .run(hash, now, adminName)
+          console.log(`[init] 管理员账号已同步最新密码: ${adminName}`)
+        }
+      } else {
+        // 未显式设置环境变量：不创建默认管理员。
+        // 但有一个非常关键的安全升级：
+        // 如果 DB 里已经残留了旧版本自动生成的 admin / admin123（因为之前铁路上的 DB 持久化还在），
+        // 必须把这个账号的 is_admin 立即降级为 0，避免别人用公开弱密码爆破后台。
+        const bcrypt = require('bcryptjs')
+        const oldAdminRow = db.prepare('SELECT id,username,password,is_admin FROM users WHERE username = ?').get('admin')
+        if (oldAdminRow) {
+          const isOldDefault = bcrypt.compareSync('admin123', oldAdminRow.password)
+          if (isOldDefault) {
+            const now = Date.now()
+            db.prepare(`UPDATE users SET is_admin=0, is_vip=0, ai_credits=3, updated_at=? WHERE id=?`).run(now, oldAdminRow.id)
+            console.log('[init-security] ⚠️  检测到数据库里存在历史遗留 admin / admin123 弱密码管理员！')
+            console.log('[init-security]    → 已自动将该账号 is_admin 降级为 0，并取消 VIP 与高额 credits。')
+            console.log('[init-security]    → 如需启用后台管理员，请在 Railway Variables 中显式设置：')
+            console.log('[init-security]         ADMIN_USERNAME = 你自定义的管理员用户名（例如 laoban / mingli_admin）')
+            console.log('[init-security]         ADMIN_PASSWORD = 至少 10 位的强密码（字母+数字+符号）')
+            console.log('[init-security]      然后 Apply Changes → Redeploy，新管理员将自动创建并加密入库。')
+          } else {
+            console.log('[init] ⚠️  已检测到数据库里有用户名为 admin 的账号，但密码不是旧默认 admin123，保留现状。')
+          }
+        } else {
+          const cnt = db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_admin = 1').get()
+          if (!cnt || cnt.c === 0) {
+            console.log('[init] ⚠️  未检测到 ADMIN_USERNAME/ADMIN_PASSWORD 环境变量，且数据库里没有任何管理员。')
+            console.log('[init]    → 请在托管平台（Railway Variables / Vercel Env）显式设置这两个变量后重启服务，再创建管理员账号。')
+            console.log('[init]    → 为避免公开站点被弱密码爆破，不再使用默认 admin/admin123。')
+          }
+        }
       }
       save()
       return db

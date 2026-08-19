@@ -31,9 +31,6 @@ export default function Login() {
       <div className="text-center text-[13px] text-ink-500 mt-4">
         还没账号？<Link to="/register" className="text-primary-700 font-semibold underline">立即注册</Link>
       </div>
-      <div className="mt-5 p-3 rounded-lg bg-amber-50 text-[11px] text-amber-800 border border-amber-200">
-        💡 演示账号：<b>admin / admin123</b>（管理员）<br />注册一个新账号更方便体验会员和充值。
-      </div>
     </div>
   )
 }
