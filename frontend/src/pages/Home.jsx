@@ -6,8 +6,7 @@ export default function Home() {
   const cards = [
     { to: '/bazi', title:'八字排盘', sub:'四柱·十神·大运·流年', color:'from-primary-700 to-primary-500', icon:'☯' },
     { to: '/meihua', title:'梅花易数', sub:'体用·互变·生克·卦辞', color:'from-ink-700 to-ink-500', icon:'䷀' },
-    { to: '/vip', title:'会员特权', sub:'每日 50 次 AI 深度解读', color:'from-amber-500 to-yellow-500', icon:'✦' },
-    { to: user ? '/profile' : '/login', title: user ? '我的账户' : '登录注册', sub: user ? '订单 / 会员 / 额度' : '登录后开启会员服务', color:'from-sky-600 to-blue-500', icon: user ? '👤' : '🔑' },
+    { to: user ? '/profile' : '/login', title: user ? '我的账户' : '登录注册', sub: user ? '额度 / 会员状态' : '登录后开启服务', color:'from-sky-600 to-blue-500', icon: user ? '👤' : '🔑' },
   ]
   return (
     <div>

@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
-import { meihuaByNumber, meihuaByTime, BAGUA_BY_ID, ZHI_INDEX, WX_CLASS } from '../utils/meihua.js'
+import { useMemo, useState, useEffect } from 'react'
+import { meihuaByNumber, meihuaByTime, BAGUA_BY_ID, ZHI_INDEX, WX_CLASS, getCurrentMonthZhi, getCurrentTimeState, getMonthZhiByDate, tiWangShuai } from '../utils/meihua.js'
+import { Solar, Lunar } from 'lunar-javascript'
 import api from '../utils/api.js'
 import { useAuthStore } from '../store/auth.js'
 import { Link, useNavigate } from 'react-router-dom'
@@ -80,13 +81,26 @@ export default function Meihua() {
   const { user } = useAuthStore()
   const [mode, setMode] = useState('num') // num / time
   const [num, setNum] = useState({ up:7, down:3, total:15 })
-  const [tm, setTm] = useState({ yearZhi:'寅', month:5, day:15, timeZhi:'午' })
-  const [monthZhi, setMonthZhi] = useState('午') // 用于月令旺衰
+  const [tm, setTm] = useState(getCurrentTimeState())
+  const [monthZhi, setMonthZhi] = useState(getCurrentMonthZhi())
   const [question, setQuestion] = useState('')
   const [result, setResult] = useState(null)
   const [aiContent, setAiContent] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiErr, setAiErr] = useState('')
+
+  // 时间起卦模式下，用户更改日期时自动推算节气月令
+  useEffect(() => {
+    if (mode === 'time') {
+      try {
+        const year = tm.year || new Date().getFullYear()
+        const lunar = Lunar.fromYmd(year, +tm.month, +tm.day)
+        const solar = lunar.getSolar()
+        const zhi = getMonthZhiByDate(solar.toDate())
+        if (zhi) setMonthZhi(zhi)
+      } catch (e) { /* ignore */ }
+    }
+  }, [mode, tm.year, tm.month, tm.day])
 
   function onCalc() {
     setAiContent(''); setAiErr('')
@@ -100,14 +114,12 @@ export default function Meihua() {
       }
       // 月令旺衰
       const mw = MONTH_WX[monthZhi] || '土'
-      import('../utils/meihua.js').then(m => {
-        const ws = m.tiWangShuai(r.ti.wx, mw)
-        r.tiWangShuai = ws
-        r.monthZhi = monthZhi
-        r.monthWX = mw
-        r.question = question
-        setResult({...r})
-      })
+      const ws = tiWangShuai(r.ti.wx, mw)
+      r.tiWangShuai = ws
+      r.monthZhi = monthZhi
+      r.monthWX = mw
+      r.question = question
+      setResult({...r})
     } catch (e) {
       alert('起卦失败：' + e.message)
     }

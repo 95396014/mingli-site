@@ -3,6 +3,7 @@ export const ZHI_INDEX = { 子:1, 丑:2, 寅:3, 卯:4, 辰:5, 巳:6, 午:7, 未:
 export const WX_CLASS = { 金:'wx-jin', 木:'wx-mu', 水:'wx-shui', 火:'wx-huo', 土:'wx-tu' }
 
 import { GAN_WUXING, ZHI_WUXING } from './bazi.js'
+import { Solar, Lunar } from 'lunar-javascript'
 
 // 八卦
 // lines 索引 0=初爻（下）、1=二爻、2=三爻（上）
@@ -204,5 +205,107 @@ function buildMeihua(upId, downId, movingLine, meta) {
     luck,
     // 供AI解读使用的结构化内容
     lineText: ben.lines?.[movingLine-1]
+  }
+}
+
+// ===== 节气月令计算 =====
+// 24节气 -> 月令（按节令分月，立春=寅月起点）
+const JIEQI_TO_MONTH_ZHI = {
+  '立春': '寅', '雨水': '寅',
+  '惊蛰': '卯', '春分': '卯',
+  '清明': '辰', '谷雨': '辰',
+  '立夏': '巳', '小满': '巳',
+  '芒种': '午', '夏至': '午',
+  '小暑': '未', '大暑': '未',
+  '立秋': '申', '处暑': '申',
+  '白露': '酉', '秋分': '酉',
+  '寒露': '戌', '霜降': '戌',
+  '立冬': '亥', '小雪': '亥',
+  '大雪': '子', '冬至': '子',
+  '小寒': '丑', '大寒': '丑',
+}
+
+// 时辰映射（小时范围 -> 地支）
+const SHICHEN_MAP = [
+  { zhi: '子', start: 23, end: 1 },
+  { zhi: '丑', start: 1, end: 3 },
+  { zhi: '寅', start: 3, end: 5 },
+  { zhi: '卯', start: 5, end: 7 },
+  { zhi: '辰', start: 7, end: 9 },
+  { zhi: '巳', start: 9, end: 11 },
+  { zhi: '午', start: 11, end: 13 },
+  { zhi: '未', start: 13, end: 15 },
+  { zhi: '申', start: 15, end: 17 },
+  { zhi: '酉', start: 17, end: 19 },
+  { zhi: '戌', start: 19, end: 21 },
+  { zhi: '亥', start: 21, end: 23 },
+]
+
+// 计算指定日期的节气月令
+export function getMonthZhiByDate(date) {
+  try {
+    const solar = Solar.fromDate(date)
+    const lunar = solar.getLunar()
+    const jq = lunar.getJieQi()
+    const name = jq ? (typeof jq === 'string' ? jq : (jq.getName?.() || '')) : ''
+    if (name && JIEQI_TO_MONTH_ZHI[name]) {
+      return JIEQI_TO_MONTH_ZHI[name]
+    }
+    // fallback：用节气前一个月推算
+    const prevJq = lunar.getPrevJieQi?.()
+    const prevName = prevJq ? (typeof prevJq === 'string' ? prevJq : (prevJq.getName?.() || '')) : ''
+    if (prevName && JIEQI_TO_MONTH_ZHI[prevName]) {
+      return JIEQI_TO_MONTH_ZHI[prevName]
+    }
+  } catch (e) { /* ignore */ }
+  return '寅'
+}
+
+// 获取当前节气月令
+export function getCurrentMonthZhi() {
+  return getMonthZhiByDate(new Date())
+}
+
+// 根据小时计算时辰
+export function getShichenByHour(hour) {
+  for (const s of SHICHEN_MAP) {
+    if (s.start > s.end) {
+      if (hour >= s.start || hour < s.end) return s.zhi
+    } else {
+      if (hour >= s.start && hour < s.end) return s.zhi
+    }
+  }
+  return '子'
+}
+
+// 获取当前时间起卦默认值
+export function getCurrentTimeState() {
+  const now = new Date()
+  try {
+    const solar = Solar.fromDate(now)
+    const lunar = solar.getLunar()
+    // 年支
+    const yearZhi = lunar.getYearInGanZhiExact?.()?.substring(1) || ''
+    // 农历月、日
+    const month = lunar.getMonth()
+    const day = lunar.getDay()
+    // 时辰
+    const hour = now.getHours()
+    const timeZhi = getShichenByHour(hour)
+    // 公历年份（用于农历转公历）
+    const year = now.getFullYear()
+    return { year, yearZhi: yearZhi || '寅', month, day, timeZhi }
+  } catch (e) {
+    // fallback
+    const year = now.getFullYear()
+    const yearZhiIdx = ((year - 4) % 12 + 12) % 12
+    const ZHIS = ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥']
+    return {
+      year,
+      yearZhi: ZHIS[yearZhiIdx],
+      month: 8,
+      day: now.getDate(),
+      timeZhi: getShichenByHour(now.getHours())
+    }
   }
 }

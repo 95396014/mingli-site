@@ -5,7 +5,6 @@ import Bazi from './pages/Bazi.jsx'
 import Meihua from './pages/Meihua.jsx'
 import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
-import Vip from './pages/Vip.jsx'
 import Profile from './pages/Profile.jsx'
 import Admin from './pages/Admin.jsx'
 import { useAuthStore } from './store/auth.js'
@@ -35,9 +34,6 @@ function Layout({ children }) {
               <div className="text-[11px] text-amber-200/80">八字命理 · 梅花易数</div>
             </div>
           </Link>
-          <Link to="/vip" className="text-[12px] px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-900 font-semibold shadow-sm">
-            ✦ 开通会员
-          </Link>
         </div>
       </header>
       <main className="max-w-2xl mx-auto px-3 -mt-3">{children}</main>
@@ -58,10 +54,9 @@ function Layout({ children }) {
   )
 }
 
-function RequireAuth({ children, requireVip = false, requireAdmin = false }) {
+function RequireAuth({ children, requireAdmin = false }) {
   const { user } = useAuthStore()
   if (!user) return <Navigate to="/login" replace />
-  if (requireVip && !user.is_vip && !user.is_admin) return <Navigate to="/vip" replace />
   if (requireAdmin && !user.is_admin) return <Navigate to="/" replace />
   return children
 }
@@ -74,7 +69,6 @@ export default function App() {
       <Route path="/meihua" element={<Layout><Meihua /></Layout>} />
       <Route path="/login" element={<Layout><Login /></Layout>} />
       <Route path="/register" element={<Layout><Register /></Layout>} />
-      <Route path="/vip" element={<Layout><RequireAuth><Vip /></RequireAuth></Layout>} />
       <Route path="/profile" element={<Layout><RequireAuth><Profile /></RequireAuth></Layout>} />
       <Route path="/admin" element={<RequireAuth requireAdmin><Admin /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />

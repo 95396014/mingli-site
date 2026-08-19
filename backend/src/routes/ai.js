@@ -24,20 +24,17 @@ const SYSTEM_PROMPTS = {
 
 function canUseAi(user) {
   if (user.is_admin) return { ok: true, type: 'admin' }
-  // 会员用户：不再按"每日N次"限制，改为直接扣 ai_credits 额度（购买会员卡和次卡时叠加赠送）
-  if (user.is_vip) {
-    const credits = Number(user.ai_credits) || 0
-    if (credits <= 0) {
-      return { ok: false, reason: '会员额度已用完，请购买 AI 次卡或续费会员获取更多解读次数。' }
-    }
-    return { ok: true, type: 'vip', credits }
+  const credits = Number(user.ai_credits) || 0
+  // VIP 用户或已购买次数的普通用户：按 ai_credits 扣减
+  if (credits > 0) {
+    return { ok: true, type: user.is_vip ? 'vip' : 'paid', credits }
   }
   // 免费用户：默认 0 次（不允许免费使用）；可通过环境变量 FREE_DAILY_LIMIT 开放少量体验
   if ((user.free_daily_used || 0) >= FREE_LIMIT) {
     if (FREE_LIMIT === 0) {
-      return { ok: false, reason: '本站 AI 深度解读为付费功能，请先开通会员或购买单次解读卡。' }
+      return { ok: false, reason: 'AI 深度解读额度不足，请联系管理员开通使用权限。' }
     }
-    return { ok: false, reason: `免费体验每日限 ${FREE_LIMIT} 次，今日已用完。开通会员或购买次卡解锁更多解读。` }
+    return { ok: false, reason: `免费体验每日限 ${FREE_LIMIT} 次，今日已用完。请联系管理员开通更多额度。` }
   }
   return { ok: true, type: 'free', limit: FREE_LIMIT, used: user.free_daily_used || 0 }
 }
@@ -92,7 +89,23 @@ ${JSON.stringify(payload, null, 2)}`
       tokens = data.usage?.total_tokens || 0
     } catch (e) {
       console.error('[deepseek] err:', e.message, e.response?.data)
-      return res.status(502).json({ error: 'AI 服务异常：' + (e.response?.data?.error?.message || e.message) })
+      const errMsg = e.response?.data?.error?.message || e.message
+      const isAuthError = errMsg.includes('Authentication') || errMsg.includes('invalid') || errMsg.includes('Unauthorized')
+      if (isAuthError) {
+        console.warn('[deepseek] API Key 认证失败，回退到演示模式')
+        content =
+`⚠️ AI 服务当前为演示模式（API Key 认证失败或未配置）。
+
+请在后端 .env 中设置有效的 DEEPSEEK_API_KEY 后重启服务，
+即可启用真实 AI 大师深度解读。
+
+以下为你传入的排盘数据概览：
+类型：${type}
+月令旺衰：${JSON.stringify(payload.wangLevel || '')}
+体用关系：${JSON.stringify(payload.shiShenCount || '')}`
+      } else {
+        return res.status(502).json({ error: 'AI 服务异常：' + errMsg })
+      }
     }
   }
 
@@ -100,7 +113,7 @@ ${JSON.stringify(payload, null, 2)}`
   const now = Date.now()
   if (auth.type === 'free') {
     db.prepare('UPDATE users SET free_daily_used = free_daily_used + 1, updated_at = ? WHERE id = ?').run(now, req.user.id)
-  } else if (auth.type === 'vip') {
+  } else if (auth.type === 'vip' || auth.type === 'paid') {
     db.prepare('UPDATE users SET ai_credits = MAX(0, ai_credits - 1), updated_at = ? WHERE id = ?').run(now, req.user.id)
   }
   db.prepare('INSERT INTO ai_logs (user_id,type,prompt,tokens_used,created_at) VALUES (?,?,?,?,?)')
@@ -110,7 +123,7 @@ ${JSON.stringify(payload, null, 2)}`
   const updated = db.prepare('SELECT ai_credits, free_daily_used FROM users WHERE id = ?').get(req.user.id) || {}
   const remain =
     auth.type === 'free' ? Math.max(0, FREE_LIMIT - (((req.user.free_daily_used||0) + 1))) :
-    auth.type === 'vip' ? Math.max(0, Number(updated.ai_credits)||0) : 9999
+    (auth.type === 'admin' ? 9999 : Math.max(0, Number(updated.ai_credits)||0))
 
   res.json({
     content, tokens, remain, authType: auth.type,

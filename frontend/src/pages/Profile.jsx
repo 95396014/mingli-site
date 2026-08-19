@@ -37,12 +37,8 @@ export default function Profile() {
         {quota && (
           <div className="grid grid-cols-3 gap-2 mt-4">
             <div className="bg-white/10 backdrop-blur rounded-xl p-2.5 text-center border border-white/20">
-              <div className="text-[10px] opacity-80">免费体验</div>
-              <div className="font-bold text-[18px]">
-                {quota.freeEnabled
-                  ? <>{quota.freeRemain}<span className="text-[11px] opacity-80 ml-0.5">/ {quota.freeDailyLimit}</span></>
-                  : '未开放'}
-              </div>
+              <div className="text-[10px] opacity-80">账户状态</div>
+              <div className="font-bold text-[14px] mt-1">{quota.isVip||quota.isAdmin ? 'VIP' : '普通'}</div>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-xl p-2.5 text-center border border-white/20">
               <div className="text-[10px] opacity-80">AI 额度</div>
@@ -57,10 +53,9 @@ export default function Profile() {
       </div>
 
       {/* 操作 */}
-      <div className="paper-card p-2 mb-3 grid grid-cols-3 gap-2">
+      <div className="paper-card p-2 mb-3 grid grid-cols-2 gap-2">
         <Link to="/bazi" className="py-2.5 text-center rounded-lg bg-primary-50 text-primary-800 text-[13px] font-medium">☯ 八字排盘</Link>
         <Link to="/meihua" className="py-2.5 text-center rounded-lg bg-ink-50 text-ink-800 text-[13px] font-medium">䷀ 梅花易数</Link>
-        <Link to="/vip" className="py-2.5 text-center rounded-lg bg-amber-50 text-amber-800 text-[13px] font-medium">✦ 会员中心</Link>
       </div>
 
       {user.is_admin && (
@@ -78,7 +73,7 @@ export default function Profile() {
       {/* 订单 */}
       <div className="paper-card p-4 mb-3">
         <div className="font-bold text-[14px] text-ink-900 font-song mb-3">📒 我的订单</div>
-        {orders.length === 0 && <div className="text-center text-[12px] text-ink-400 py-6">尚无订单，去 <Link to="/vip" className="text-primary-700 underline">开通会员</Link></div>}
+        {orders.length === 0 && <div className="text-center text-[12px] text-ink-400 py-6">尚无订单记录</div>}
         <div className="space-y-2">
           {orders.map(o => (
             <div key={o.id} className="flex items-center justify-between p-3 rounded-xl bg-ink-50 border border-ink-100">

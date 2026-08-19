@@ -142,10 +142,10 @@ export default function Bazi() {
       {/* 输入卡 - 问真风格 */}
       <div className="paper-card p-4 mb-3">
         <h2 className="font-song font-bold text-[17px] text-ink-900 mb-3 flex items-center gap-2">
-          <span className="seal text-xs">排盘</span> 八字排盘（仿问真八字）
+          <span className="seal text-xs">排盘</span> 八字排盘
         </h2>
 
-        {/* 日历类型切换（仿问真顶部的大按钮） */}
+        {/* 日历类型切换 */}
         <div className="grid grid-cols-2 gap-2 mb-3">
           {[
             { k:'solar', l:'公历 / 阳历' },
@@ -220,7 +220,7 @@ export default function Bazi() {
 
         {/* 高级：夏令时 + 真太阳时 + 经度 + 出生地 */}
         <div className="mt-3 p-3 rounded-xl bg-gradient-to-br from-ink-50 to-white border border-ink-200 space-y-2.5">
-          <div className="font-song font-bold text-[13px] text-ink-700">⚙️ 排盘校正 · 仿问真八字（更精准）</div>
+          <div className="font-song font-bold text-[13px] text-ink-700">⚙️ 排盘校正（更精准）</div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <label className="col-span-1"><span className="field-label">夏令时（北京夏令时 1986-1991）</span>
               <select className="field" value={form.dstSwitch} onChange={e=>setForm({...form, dstSwitch:e.target.value})}>
@@ -253,7 +253,7 @@ export default function Bazi() {
         </div>
 
         <button className="btn-zhusha w-full mt-4" onClick={onCalc} disabled={loading}>
-          {loading ? '排盘中…' : '✦ 立即排盘（仿问真）'}
+          {loading ? '排盘中…' : '✦ 立即排盘'}
         </button>
       </div>
 

@@ -20,7 +20,7 @@ export default function Register() {
       <div className="text-center mb-5">
         <div className="seal mx-auto mb-2">注册</div>
         <div className="font-song font-bold text-[18px] text-ink-900">新开命盘</div>
-        <div className="text-[12px] text-ink-500 mt-0.5">登录后购买会员或次卡即可使用 AI 深度解读</div>
+        <div className="text-[12px] text-ink-500 mt-0.5">注册后由管理员开通额度即可使用 AI 深度解读</div>
       </div>
       <form onSubmit={submit} className="space-y-3">
         <label><span className="field-label">用户名 *（≥3位）</span><input className="field" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} placeholder="字母/数字/中文均可" /></label>

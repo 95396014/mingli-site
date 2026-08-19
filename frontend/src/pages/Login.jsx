@@ -20,7 +20,7 @@ export default function Login() {
       <div className="text-center mb-5">
         <div className="seal mx-auto mb-2">问命阁</div>
         <div className="font-song font-bold text-[18px] text-ink-900">欢迎回来</div>
-        <div className="text-[12px] text-ink-500 mt-0.5">登录后可使用 AI 深度解读与会员功能</div>
+        <div className="text-[12px] text-ink-500 mt-0.5">登录后可使用排盘与 AI 深度解读</div>
       </div>
       <form onSubmit={submit} className="space-y-3">
         <label><span className="field-label">用户名</span><input className="field" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} /></label>
