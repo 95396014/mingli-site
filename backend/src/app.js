@@ -1,4 +1,3 @@
-require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const path = require('path')
@@ -10,6 +9,9 @@ const vipRoutes = require('./routes/vip.js')
 const adminRoutes = require('./routes/admin.js')
 const { authMiddleware, requireVip, requireAdmin } = require('./middleware/auth.js')
 
+// 尽量加载 .env（没有就不报错，Railway/Koyeb 直接传环境变量）
+try { require('dotenv').config() } catch {}
+
 ;(async () => {
   await initDB()
 
@@ -20,7 +22,7 @@ const { authMiddleware, requireVip, requireAdmin } = require('./middleware/auth.
 
   app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }))
 
-  // 公开：会员套餐列表
+  // 公开：会员套餐列表（价格与后端一致，避免前端显示价≠下单价）
   const VIP_PLANS = [
     { id: 'month', name: '月度会员', price: 266, days: 30, credits: 0, desc: '每日 50 次 AI 深度解读 · 全功能开放' },
     { id: 'quarter', name: '季度会员', price: 688, days: 90, credits: 200, desc: '每日 50 次 AI 深度解读 · 赠 200 次额外额度' },
@@ -49,8 +51,11 @@ const { authMiddleware, requireVip, requireAdmin } = require('./middleware/auth.
     }
   } catch {}
 
-  const PORT = process.env.PORT || 3001
-  app.listen(PORT, () => {
-    console.log(`[mingli] 后端已启动: http://localhost:${PORT}`)
+  // 兼容 Railway/Koyeb：它们常传 PORT=10000/3000/8080；Render 也是。
+  const PORT = Number(process.env.PORT) || Number(process.env.DEV_PORT) || 3001
+  // Host 必须监听 0.0.0.0 才能被托管平台的外部网关发现
+  const HOST = process.env.HOST || '0.0.0.0'
+  app.listen(PORT, HOST, () => {
+    console.log(`[mingli] 后端已启动: http://${HOST}:${PORT}`)
   })
 })()

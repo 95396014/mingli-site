@@ -3,5 +3,10 @@
   "installCommand": "cd frontend && npm install",
   "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
-  "ignoreCommand": "exit 0"
+  "ignoreCommand": "exit 0",
+  "build": {
+    "env": {
+      "ENABLE_EXPERIMENTAL_COREPACK": "1"
+    }
+  }
 }
