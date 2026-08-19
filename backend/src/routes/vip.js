@@ -22,7 +22,7 @@ router.post('/order/create', async (req, res) => {
   const now = Date.now()
   const orderNo = 'ML' + now.toString().slice(-8) + Math.floor(Math.random() * 1000).toString().padStart(3, '0')
 
-  const insertResult = db.prepare(`INSERT INTO orders (order_no,user_id,plan_id,plan_name,amount,status,created_at) VALUES (?,?,?,?,?,'pending',?)`)
+  const insertResult = await db.prepare(`INSERT INTO orders (order_no,user_id,plan_id,plan_name,amount,status,created_at) VALUES (?,?,?,?,?,'pending',?)`)
     .run(orderNo, req.user.id, plan.id, plan.name, Math.round(plan.price * 100), now)
   const orderId = insertResult.lastInsertRowid
 
@@ -58,7 +58,7 @@ router.post('/order/create', async (req, res) => {
       const code_url = result.code_url
       const qr_url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(code_url)}`
 
-      db.prepare('UPDATE orders SET pay_method = ?, code_url = ?, updated_at = ? WHERE id = ?')
+      await db.prepare('UPDATE orders SET pay_method = ?, code_url = ?, updated_at = ? WHERE id = ?')
         .run('wxpay', code_url, now, orderId)
 
       res.json({
@@ -73,7 +73,7 @@ router.post('/order/create', async (req, res) => {
       })
     } catch (err) {
       console.error('[wxpay] Native 下单失败：', err.response?.data || err.message)
-      db.prepare("UPDATE orders SET status='cancelled', updated_at = ? WHERE id = ?").run(Date.now(), orderId)
+      await db.prepare("UPDATE orders SET status='cancelled', updated_at = ? WHERE id = ?").run(Date.now(), orderId)
       return res.status(500).json({ error: '微信下单失败：' + (err.response?.data?.message || err.message) })
     }
   } else {
@@ -86,27 +86,27 @@ router.post('/order/create', async (req, res) => {
   }
 })
 
-function fulfillOrder(db, orderNo) {
-  const order = db.prepare('SELECT * FROM orders WHERE order_no = ?').get(orderNo)
+async function fulfillOrder(db, orderNo) {
+  const order = await db.prepare('SELECT * FROM orders WHERE order_no = ?').get(orderNo)
   if (!order || order.status === 'paid') return
   const plan = PLANS.find(p => p.id === order.plan_id)
   if (!plan) return
   const now = Date.now()
-  db.prepare("UPDATE orders SET status='paid', paid_at=?, pay_method=COALESCE(pay_method, 'demo') WHERE id=?").run(now, order.id)
+  await db.prepare("UPDATE orders SET status='paid', paid_at=?, pay_method=COALESCE(pay_method, 'demo') WHERE id=?").run(now, order.id)
   if (plan.days > 0) {
-    const user = db.prepare('SELECT is_vip, vip_expire_at FROM users WHERE id = ?').get(order.user_id)
+    const user = await db.prepare('SELECT is_vip, vip_expire_at FROM users WHERE id = ?').get(order.user_id)
     const base = (user.is_vip && user.vip_expire_at > now) ? user.vip_expire_at : now
     const expire = base + plan.days * 86400000
-    db.prepare('UPDATE users SET is_vip = 1, vip_expire_at = ?, ai_credits = ai_credits + ?, updated_at = ? WHERE id = ?')
+    await db.prepare('UPDATE users SET is_vip = 1, vip_expire_at = ?, ai_credits = ai_credits + ?, updated_at = ? WHERE id = ?')
       .run(expire, plan.credits || 0, now, order.user_id)
   } else if (plan.credits > 0) {
-    db.prepare('UPDATE users SET ai_credits = ai_credits + ?, updated_at = ? WHERE id = ?')
+    await db.prepare('UPDATE users SET ai_credits = ai_credits + ?, updated_at = ? WHERE id = ?')
       .run(plan.credits, now, order.user_id)
   }
   console.log(`[order] ${orderNo} 已到账，uid=${order.user_id}`)
 }
 
-router.post('/wxpay-notify', express.raw({ type: 'application/json' }), (req, res) => {
+router.post('/wxpay-notify', express.raw({ type: 'application/json' }), async (req, res) => {
   const db = req.db
   let pay
   try { pay = require('../config/pay') } catch (e) {
@@ -143,7 +143,7 @@ router.post('/wxpay-notify', express.raw({ type: 'application/json' }), (req, re
       return res.json({ code: 'SUCCESS', message: '成功' })
     }
 
-    const order = db.prepare('SELECT * FROM orders WHERE order_no = ?').get(out_trade_no)
+    const order = await db.prepare('SELECT * FROM orders WHERE order_no = ?').get(out_trade_no)
     if (!order) {
       console.error('[wxpay] 回调订单不存在：', out_trade_no)
       return res.json({ code: 'FAIL', message: '订单不存在' })
@@ -154,10 +154,10 @@ router.post('/wxpay-notify', express.raw({ type: 'application/json' }), (req, re
     }
 
     if (transaction_id) {
-      db.prepare("UPDATE orders SET transaction_id = ? WHERE order_no = ?").run(transaction_id, out_trade_no)
+      await db.prepare("UPDATE orders SET transaction_id = ? WHERE order_no = ?").run(transaction_id, out_trade_no)
     }
 
-    fulfillOrder(db, out_trade_no)
+    await fulfillOrder(db, out_trade_no)
     console.log(`[wxpay] Native 支付成功，订单 ${out_trade_no} 已到账`)
     res.json({ code: 'SUCCESS', message: '成功' })
   } catch (err) {
@@ -166,14 +166,14 @@ router.post('/wxpay-notify', express.raw({ type: 'application/json' }), (req, re
   }
 })
 
-router.get('/order/:no', (req, res) => {
-  const order = req.db.prepare('SELECT * FROM orders WHERE order_no = ? AND user_id = ?').get(req.params.no, req.user.id)
+router.get('/order/:no', async (req, res) => {
+  const order = await req.db.prepare('SELECT * FROM orders WHERE order_no = ? AND user_id = ?').get(req.params.no, req.user.id)
   if (!order) return res.status(404).json({ error: '订单不存在' })
   res.json({ order })
 })
 
-router.get('/orders', (req, res) => {
-  const list = req.db.prepare('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 50').all(req.user.id)
+router.get('/orders', async (req, res) => {
+  const list = await req.db.prepare('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 50').all(req.user.id)
   res.json({ list })
 })
 
