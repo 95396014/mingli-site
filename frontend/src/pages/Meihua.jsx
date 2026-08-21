@@ -1,6 +1,5 @@
-import { useMemo, useState, useEffect } from 'react'
-import { meihuaByNumber, meihuaByTime, BAGUA_BY_ID, ZHI_INDEX, WX_CLASS, getCurrentMonthZhi, getCurrentTimeState, getMonthZhiByDate, tiWangShuai } from '../utils/meihua.js'
-import { Solar, Lunar } from 'lunar-javascript'
+import { useMemo, useState } from 'react'
+import { meihuaByNumber, meihuaByTime, BAGUA_BY_ID, ZHI_INDEX, WX_CLASS, tiWangShuai, solarToLunarState } from '../utils/meihua.js'
 import api from '../utils/api.js'
 import { useAuthStore } from '../store/auth.js'
 import { Link, useNavigate } from 'react-router-dom'
@@ -8,11 +7,9 @@ import { Link, useNavigate } from 'react-router-dom'
 const ZHI_OPTS = ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥']
 const MONTH_WX = { 寅:'木',卯:'木',辰:'土',巳:'火',午:'火',未:'土',申:'金',酉:'金',戌:'土',亥:'水',子:'水',丑:'土' }
 const MONTH_NUM = { 寅:1,卯:2,辰:3,巳:4,午:5,未:6,申:7,酉:8,戌:9,亥:10,子:11,丑:12 }
-const ZHI_MONTH = Object.fromEntries(Object.entries(MONTH_NUM).map(([k,v])=>[v,k])) // 1-12 -> 近似月支（简化）
+const ZHI_MONTH = Object.fromEntries(Object.entries(MONTH_NUM).map(([k,v])=>[v,k]))
 
-function Yao({ lines, movingLine, variant='ben' }) {
-  // lines: [bottom(初爻), top(上爻)] 6位
-  // 竖排：上爻在上，初爻在下
+function Yao({ lines, movingLine }) {
   const arr = [...lines].reverse()
   return (
     <div className="flex flex-col gap-2 py-2 items-center">
@@ -40,10 +37,10 @@ function Yao({ lines, movingLine, variant='ben' }) {
   )
 }
 
-function HexTile({ hex, label, ti, yong, variant }) {
+function HexTile({ hex, label, ti, yong }) {
   if (!hex) return null
   const up = BAGUA_BY_ID[hex.up]; const down = BAGUA_BY_ID[hex.down]
-  const lines = [...down.lines, ...up.lines] // 6 爻 0=初
+  const lines = [...down.lines, ...up.lines]
   const isTi = (t) => ti && ti.id === t ? true : false
   const isYong = (t) => yong && yong.id === t ? true : false
   return (
@@ -58,7 +55,7 @@ function HexTile({ hex, label, ti, yong, variant }) {
       </div>
       <div className="text-center text-2xl mb-1 tracking-widest text-ink-800">{up.symbol}{down.symbol}</div>
       <div className="mx-auto w-max px-2">
-        <Yao lines={lines} movingLine={variant==='ben' ? (ti ? (yong ? 0 : 0) : 0) : 0} />
+        <Yao lines={lines} movingLine={hex.__movingLine || 0} />
       </div>
       <div className="mt-1 grid grid-cols-2 gap-1 text-[11px]">
         <div className={`tag mx-auto ${WX_CLASS[up.wx]}`}>
@@ -76,31 +73,64 @@ function HexTile({ hex, label, ti, yong, variant }) {
   )
 }
 
+function Collapsible({ title, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="rounded-xl border border-ink-200 bg-ink-50/50 overflow-hidden">
+      <button type="button"
+        className="w-full px-3 py-2.5 flex items-center justify-between text-[13px] text-ink-600 hover:bg-ink-50 transition"
+        onClick={() => setOpen(!open)}>
+        <span className="font-medium">{title}</span>
+        <span className={`text-ink-400 transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+      </button>
+      {open && <div className="px-3 pb-3 pt-0 text-[12px] text-ink-600 leading-relaxed">{children}</div>}
+    </div>
+  )
+}
+
 export default function Meihua() {
   const nav = useNavigate()
   const { user } = useAuthStore()
-  const [mode, setMode] = useState('num') // num / time
-  const [num, setNum] = useState({ up:7, down:3, total:15 })
-  const [tm, setTm] = useState(getCurrentTimeState())
-  const [monthZhi, setMonthZhi] = useState(getCurrentMonthZhi())
+  const [mode, setMode] = useState('num')
+  const [num, setNum] = useState({ up: 7, down: 3 })
+  const [solarDate, setSolarDate] = useState(() => {
+    const d = new Date()
+    const pad = n => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  })
   const [question, setQuestion] = useState('')
   const [result, setResult] = useState(null)
   const [aiContent, setAiContent] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiErr, setAiErr] = useState('')
+  const [showTimeDetail, setShowTimeDetail] = useState(false)
 
-  // 时间起卦模式下，用户更改日期时自动推算节气月令
-  useEffect(() => {
-    if (mode === 'time') {
-      try {
-        const year = tm.year || new Date().getFullYear()
-        const lunar = Lunar.fromYmd(year, +tm.month, +tm.day)
-        const solar = lunar.getSolar()
-        const zhi = getMonthZhiByDate(solar.toDate())
-        if (zhi) setMonthZhi(zhi)
-      } catch (e) { /* ignore */ }
-    }
-  }, [mode, tm.year, tm.month, tm.day])
+  const solarDateObj = useMemo(() => new Date(solarDate), [solarDate])
+
+  // 自动换算：公历 → 农历年支/月/日/时辰 + 节气月令
+  const lunarState = useMemo(() => solarToLunarState(solarDateObj), [solarDateObj])
+  const monthZhi = lunarState.monthZhi
+
+  // 数字起卦动爻自动推算
+  const numCalc = useMemo(() => {
+    const s = (+num.up || 0) + (+num.down || 0)
+    const dong = s > 0 ? ((s - 1) % 6) + 1 : 0
+    const shangGuaId = s > 0 ? (((+num.up - 1) % 8) + 1) : 0
+    const xiaGuaId = s > 0 ? (((+num.down - 1) % 8) + 1) : 0
+    return { s, dong, shangGuaId, xiaGuaId }
+  }, [num.up, num.down])
+
+  // 时间起卦自动推算细节
+  const timeDetail = useMemo(() => {
+    if (!lunarState) return null
+    const zhiIdx = ZHI_INDEX[lunarState.yearZhi] || 1
+    const shangSum = zhiIdx + (+lunarState.month) + (+lunarState.day)
+    const shangGuaId = ((shangSum - 1) % 8) + 1
+    const xiaSum = shangSum + (ZHI_INDEX[lunarState.timeZhi] || 1)
+    const xiaGuaId = ((xiaSum - 1) % 8) + 1
+    const dong = ((xiaSum - 1) % 6) + 1
+    return { zhiIdx, shangSum, shangGuaId, xiaSum, xiaGuaId, dong }
+  }, [lunarState])
 
   function onCalc() {
     setAiContent(''); setAiErr('')
@@ -108,12 +138,11 @@ export default function Meihua() {
       let r
       if (mode === 'num') {
         if (!num.up || !num.down) return alert('请填上、下卦数')
-        const autoTotal = (+num.up) + (+num.down)
-        r = meihuaByNumber(+num.up, +num.down, autoTotal)
+        r = meihuaByNumber(+num.up, +num.down, +num.up + +num.down)
       } else {
-        r = meihuaByTime(ZHI_INDEX[tm.yearZhi], +tm.month, +tm.day, ZHI_INDEX[tm.timeZhi])
+        const ls = solarToLunarState(solarDateObj)
+        r = meihuaByTime(ZHI_INDEX[ls.yearZhi], +ls.month, +ls.day, ZHI_INDEX[ls.timeZhi])
       }
-      // 月令旺衰
       const mw = MONTH_WX[monthZhi] || '土'
       const ws = tiWangShuai(r.ti.wx, mw)
       r.tiWangShuai = ws
@@ -165,19 +194,27 @@ export default function Meihua() {
           <span className="seal text-xs">起卦</span> 梅花易数起卦
         </h2>
 
-        {/* 占问 */}
+        {/* 占问事项 */}
         <label className="mb-3 block"><span className="field-label">所占何事（必填，AI 解读越详细越准）</span>
           <textarea rows={2} className="field" placeholder="例如：明日面试能否通过？此项目合作是否顺利？"
             value={question} onChange={e=>setQuestion(e.target.value)} />
         </label>
 
-        {/* 月令 */}
-        <label className="mb-3 block"><span className="field-label">占问月令（决定体卦旺衰，按节气的月支）</span>
-          <select className="field" value={monthZhi} onChange={e=>setMonthZhi(e.target.value)}>
-            {ZHI_OPTS.map(z => <option key={z} value={z}>{z}月（{MONTH_WX[z]}）</option>)}
-          </select>
-        </label>
+        {/* 占问时间 - 自动读取系统时间换算 */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="field-label mb-0">占问时间</span>
+            <span className="text-[11px] text-ink-400">系统自动按节气换算月令</span>
+          </div>
+          <div className="rounded-xl bg-ink-50 border border-ink-100 px-3 py-2.5 text-[12px] text-ink-700 flex items-center gap-2 flex-wrap">
+            <span className="tag wx-tu">节气</span>
+            <b className="text-primary-700">{monthZhi}月（{MONTH_WX[monthZhi]}）</b>
+            <span className="text-ink-300">·</span>
+            <span className="text-ink-500">{solarDateObj.getFullYear()}年{solarDateObj.getMonth()+1}月{solarDateObj.getDate()}日</span>
+          </div>
+        </div>
 
+        {/* 起卦方式切换 */}
         <div className="grid grid-cols-2 gap-2 mb-3">
           {[{k:'num',l:'🔢 数字起卦'},{k:'time',l:'🕒 时间起卦'}].map(o=>(
             <button key={o.k} onClick={()=>setMode(o.k)}
@@ -187,66 +224,93 @@ export default function Meihua() {
           ))}
         </div>
 
+        {/* 数字起卦 */}
         {mode === 'num' && (
-          <div className="grid grid-cols-1 gap-2">
-            <label><span className="field-label">上卦数（任意正整数，除以8取余为上卦）</span>
-              <input type="number" min="1" className="field" value={num.up} onChange={e=>setNum({...num, up:e.target.value})} />
+          <div className="space-y-3">
+            <label className="block"><span className="field-label">上卦数</span>
+              <input type="number" min="1" className="field" placeholder="任意正整数" value={num.up} onChange={e=>setNum({...num, up:e.target.value})} />
             </label>
-            <label><span className="field-label">下卦数（任意正整数，除以8取余为下卦）</span>
-              <input type="number" min="1" className="field" value={num.down} onChange={e=>setNum({...num, down:e.target.value})} />
+            <label className="block"><span className="field-label">下卦数</span>
+              <input type="number" min="1" className="field" placeholder="任意正整数" value={num.down} onChange={e=>setNum({...num, down:e.target.value})} />
             </label>
+
+            {/* 动爻自动推算结果 */}
             <div className="rounded-xl border border-primary-200 bg-primary-50 px-3 py-2.5 text-[13px] text-ink-800 flex items-center justify-between">
               <div>
-                <div className="text-primary-700 font-bold text-[13px]">📐 动爻自动推算</div>
+                <div className="text-primary-700 font-bold text-[13px]">📐 自动推算</div>
                 <div className="text-[11px] text-ink-500 mt-0.5">
-                  上+下 = <b>{(+num.up||0) + (+num.down||0)}</b>
-                  {(() => {
-                    const s = (+num.up||0) + (+num.down||0)
-                    const m = s > 0 ? ((s - 1) % 6) + 1 : 0
-                    return <>，÷6 余 = <b className="text-primary-700">{m || '—'}</b>，动爻为第 <b className="text-primary-700">{m || '—'}</b> 爻</>
-                  })()}
+                  动爻为第 <b className="text-primary-700 text-[14px]">{numCalc.dong || '—'}</b> 爻
+                  <span className="text-ink-300 mx-1">·</span>
+                  上卦 <b>{numCalc.shangGuaId || '—'}</b>
+                  <span className="text-ink-300 mx-1">·</span>
+                  下卦 <b>{numCalc.xiaGuaId || '—'}</b>
                 </div>
               </div>
               <span className="tag wx-mu">自动</span>
             </div>
-            <div className="text-[10px] text-ink-400 leading-relaxed">
-              · 上卦 = 上数 mod 8（0 取 8）<br/>
-              · 下卦 = 下数 mod 8（0 取 8）<br/>
-              · 动爻 = (上+下) mod 6（0 取 6），仅第 1~6 爻会变化
-            </div>
+
+            {/* 规则说明 - 折叠 */}
+            <Collapsible title="📖 起卦规则说明">
+              <div className="space-y-1.5">
+                <p><b className="text-ink-800">梅花易数 · 数字起卦：</b></p>
+                <p>① 上卦 = 上卦数 mod 8，余 0 取 8（先天八卦序：1乾 2兑 3离 4震 5巽 6坎 7艮 8坤）</p>
+                <p>② 下卦 = 下卦数 mod 8，余 0 取 8</p>
+                <p>③ 动爻 = (上卦数 + 下卦数) mod 6，余 0 取 6</p>
+                <p>④ 动爻为下往上第 N 爻变化，阳变阴、阴变阳，得变卦</p>
+                <p className="text-ink-400 pt-1">示例：上7 下3 → 上卦7 mod 8 = 7 艮；下卦3 mod 8 = 3 离；动爻(7+3) mod 6 = 4 → 第4爻动</p>
+              </div>
+            </Collapsible>
           </div>
         )}
 
+        {/* 时间起卦 */}
         {mode === 'time' && (
-          <div className="grid grid-cols-2 gap-2">
-            <label><span className="field-label">年支</span>
-              <select className="field" value={tm.yearZhi} onChange={e=>setTm({...tm, yearZhi:e.target.value})}>
-                {ZHI_OPTS.map((z,i)=><option key={z} value={z}>{z}（{i+1}）</option>)}
-              </select>
+          <div className="space-y-3">
+            <label className="block"><span className="field-label">选择公历日期时间</span>
+              <input type="datetime-local" step={60} className="field"
+                value={solarDate} onChange={e=>setSolarDate(e.target.value)} />
             </label>
-            <label><span className="field-label">月（农历1-12）</span>
-              <select className="field" value={tm.month} onChange={e=>setTm({...tm, month:+e.target.value})}>
-                {Array.from({length:12},(_,i)=>i+1).map(m=><option key={m} value={m}>{m}月</option>)}
-              </select>
-            </label>
-            <label><span className="field-label">日（农历1-30）</span>
-              <select className="field" value={tm.day} onChange={e=>setTm({...tm, day:+e.target.value})}>
-                {Array.from({length:30},(_,i)=>i+1).map(d=><option key={d} value={d}>{d}日</option>)}
-              </select>
-            </label>
-            <label><span className="field-label">时辰</span>
-              <select className="field" value={tm.timeZhi} onChange={e=>setTm({...tm, timeZhi:e.target.value})}>
-                {ZHI_OPTS.map((z,i)=><option key={z} value={z}>{z}时（{i+1}）</option>)}
-              </select>
-            </label>
-            <div className="col-span-2 rounded-xl border border-primary-200 bg-primary-50 px-3 py-2 text-[12px] text-ink-700">
-              <div className="text-primary-700 font-bold mb-0.5">🕒 时间起卦推导</div>
-              <div className="space-y-0.5 text-[11px]">
-                <div>上卦 = (年支{ZHI_INDEX[tm.yearZhi]||'?'} + 月{+tm.month} + 日{+tm.day}) mod 8</div>
-                <div>下卦 = (上卦和 + 时辰{ZHI_INDEX[tm.timeZhi]||'?'}) mod 8</div>
-                <div>动爻 = (年+月+日+时) mod 6</div>
+
+            {/* 自动换算摘要 */}
+            <div className="rounded-xl border border-primary-200 bg-primary-50 px-3 py-2.5 text-[12px] text-ink-700">
+              <div className="text-primary-700 font-bold mb-1">🔄 自动换算</div>
+              <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px]">
+                <div>年支：<b className="text-ink-800">{lunarState.yearZhi}</b>（{ZHI_INDEX[lunarState.yearZhi]}）</div>
+                <div>时辰：<b className="text-ink-800">{lunarState.timeZhi}</b>（{ZHI_INDEX[lunarState.timeZhi]}）</div>
+                <div>农历月：<b className="text-ink-800">{lunarState.month}</b></div>
+                <div>农历日：<b className="text-ink-800">{lunarState.day}</b></div>
               </div>
             </div>
+
+            {/* 起卦详情 - 折叠 */}
+            <Collapsible title="📖 查看起卦详情">
+              {timeDetail && (
+                <div className="space-y-1.5">
+                  <p className="text-ink-800 font-medium">梅花易数 · 时间起卦推导过程：</p>
+                  <div className="bg-white rounded-lg p-2.5 space-y-0.5 text-[11px] font-mono border border-ink-100">
+                    <div>年支 {lunarState.yearZhi} = {ZHI_INDEX[lunarState.yearZhi]}</div>
+                    <div>农历月 {lunarState.month}，农历日 {lunarState.day}</div>
+                    <div>时辰 {lunarState.timeZhi} = {ZHI_INDEX[lunarState.timeZhi]}</div>
+                    <div className="text-primary-700 pt-0.5 border-t border-ink-100 mt-1 pt-1">
+                      上卦 = ({ZHI_INDEX[lunarState.yearZhi]} + {lunarState.month} + {lunarState.day}) mod 8
+                    </div>
+                    <div className="text-primary-700">
+                      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= {timeDetail.shangSum} mod 8 = <b>{timeDetail.shangGuaId}</b>
+                    </div>
+                    <div className="text-primary-700 pt-0.5 border-t border-ink-100 mt-1 pt-1">
+                      下卦 = ({timeDetail.shangSum} + {ZHI_INDEX[lunarState.timeZhi]}) mod 8
+                    </div>
+                    <div className="text-primary-700">
+                      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= {timeDetail.xiaSum} mod 8 = <b>{timeDetail.xiaGuaId}</b>
+                    </div>
+                    <div className="text-primary-700 pt-0.5 border-t border-ink-100 mt-1 pt-1">
+                      动爻 = ({timeDetail.xiaSum}) mod 6 = <b>{timeDetail.dong}</b>
+                    </div>
+                  </div>
+                  <p className="text-ink-400 pt-1 text-[11px]">先天八卦序：1乾 2兑 3离 4震 5巽 6坎 7艮 8坤</p>
+                </div>
+              )}
+            </Collapsible>
           </div>
         )}
 
@@ -258,9 +322,9 @@ export default function Meihua() {
         {/* 卦象卡 */}
         <div className="paper-card p-3 mb-3">
           <div className="grid grid-cols-3 gap-2">
-            <HexTile hex={result.ben} label="本卦" ti={result.ti} yong={result.yong} variant="ben" />
+            <HexTile hex={{...result.ben, __movingLine: result.movingLine }} label="本卦" ti={result.ti} yong={result.yong} />
             <HexTile hex={result.hu} label="互卦（过程）" />
-            <HexTile hex={result.bian} label="变卦（结果）" />
+            <HexTile hex={{...result.bian, __movingLine: result.movingLine }} label="变卦（结果）" />
           </div>
           <div className="mt-2.5 grid grid-cols-2 gap-2 text-[11px] text-ink-500">
             <div className="bg-ink-50 rounded-lg px-2.5 py-2">

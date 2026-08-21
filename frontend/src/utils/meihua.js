@@ -309,3 +309,35 @@ export function getCurrentTimeState() {
     }
   }
 }
+
+// 公历日期 → 梅花易数起卦所需的农历状态（年支/月/日/时辰 + 节气月令）
+export function solarToLunarState(date) {
+  if (!(date instanceof Date)) date = new Date(date)
+  try {
+    const solar = Solar.fromDate(date)
+    const lunar = solar.getLunar()
+    const yearZhi = lunar.getYearInGanZhiExact?.()?.substring(1) || ''
+    const month = lunar.getMonth()
+    const day = lunar.getDay()
+    const hour = date.getHours()
+    const timeZhi = getShichenByHour(hour)
+    const monthZhi = getMonthZhiByDate(date)
+    return {
+      year: date.getFullYear(),
+      yearZhi: yearZhi || '寅',
+      month, day, timeZhi, monthZhi,
+    }
+  } catch (e) {
+    const year = date.getFullYear()
+    const yearZhiIdx = ((year - 4) % 12 + 12) % 12
+    const ZHIS = ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥']
+    return {
+      year,
+      yearZhi: ZHIS[yearZhiIdx],
+      month: date.getMonth() + 1,
+      day: date.getDate(),
+      timeZhi: getShichenByHour(date.getHours()),
+      monthZhi: '寅',
+    }
+  }
+}
