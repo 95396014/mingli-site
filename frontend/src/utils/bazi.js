@@ -267,7 +267,7 @@ export function calculateBazi({
     yearGan, monthGan, monthZhi, dayGan, gender, birthDate: d
   })
   const qiYunSui = Math.max(1, Math.round(qiYunAge))
-  const qiYunDate = birthDate.getFullYear() + qiYunAge + '岁起运'
+  const qiYunDate = d.getFullYear() + qiYunAge + '岁起运'
 
   // 华盖贵人
   const huaGai = getHuaGai(yearZhi, dayZhi, monthZhi)
