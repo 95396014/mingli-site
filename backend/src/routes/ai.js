@@ -98,14 +98,13 @@ function canUseAi(user) {
   if (credits > 0) {
     return { ok: true, type: user.is_vip ? 'vip' : 'paid', credits }
   }
-  // 免费用户：默认 0 次（不允许免费使用）；可通过环境变量 FREE_DAILY_LIMIT 开放少量体验
-  if ((user.free_daily_used || 0) >= FREE_LIMIT) {
-    if (FREE_LIMIT === 0) {
-      return { ok: false, reason: 'AI 深度解读额度不足，请联系管理员开通使用权限。' }
-    }
-    return { ok: false, reason: `免费体验每日限 ${FREE_LIMIT} 次，今日已用完。请联系管理员开通更多额度。` }
+  // 免费用户：给 3 次免费体验
+  const FREE_TRIAL = 3
+  const used = user.free_daily_used || 0
+  if (used >= FREE_TRIAL) {
+    return { ok: false, reason: `免费体验已用完（共 ${FREE_TRIAL} 次），请开通会员或购买次数包后使用。` }
   }
-  return { ok: true, type: 'free', limit: FREE_LIMIT, used: user.free_daily_used || 0 }
+  return { ok: true, type: 'free_trial', limit: FREE_TRIAL, used }
 }
 
 router.post('/interpret', async (req, res) => {
