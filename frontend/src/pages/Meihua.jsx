@@ -217,7 +217,7 @@ export default function Meihua() {
         {/* 起卦方式切换 */}
         <div className="grid grid-cols-2 gap-2 mb-3">
           {[{k:'num',l:'🔢 数字起卦'},{k:'time',l:'🕒 时间起卦'}].map(o=>(
-            <button key={o.k} onClick={()=>setMode(o.k)}
+            <button key={o.k} onClick={()=>{setMode(o.k); setResult(null); setAiContent(''); setAiErr('')}}
               className={`py-2.5 rounded-lg font-medium text-[13px] border ${mode===o.k?'bg-primary-700 text-white border-primary-800':'bg-white text-ink-600 border-ink-200'}`}>
               {o.l}
             </button>

@@ -374,12 +374,15 @@ export default function Bazi() {
                 { key:'zaoWanZi', label:'早晚子时', checked: form.zaoWanZi },
                 { key:'dst', label:'夏令时', checked: form.dstSwitch !== 'off' },
               ].map(opt => (
-                <label key={opt.key} className="inline-flex items-center gap-2 text-[14px] text-ink-700 cursor-pointer"
+                <label key={opt.key} className={`inline-flex items-center gap-2 text-[14px] cursor-pointer px-3 py-1.5 rounded-full border transition ${opt.checked ? 'bg-[#e6f8f5] border-[#00b3a0] text-[#00b3a0]' : 'bg-white border-ink-200 text-ink-600'}`}
                        onClick={()=>toggleOpt(opt.key, true)}>
-                  <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${opt.checked ? 'border-[#00b3a0]' : 'border-ink-300'}`}>
-                    {opt.checked && <span className="w-2.5 h-2.5 rounded-full bg-[#00b3a0]" />}
+                  <span className={`relative w-9 h-5 rounded-full transition ${opt.checked ? 'bg-[#00b3a0]' : 'bg-ink-200'}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${opt.checked ? 'left-[18px]' : 'left-0.5'}`} />
                   </span>
-                  {opt.label}
+                  <span className="font-medium">{opt.label}</span>
+                  <span className={`text-[10px] font-bold ${opt.checked ? 'text-[#00b3a0]' : 'text-ink-400'}`}>
+                    {opt.checked ? 'ON' : 'OFF'}
+                  </span>
                 </label>
               ))}
             </div>
@@ -455,7 +458,7 @@ export default function Bazi() {
 
       {!result && (
         <div className="paper-card p-4 text-center text-ink-500 text-[13px]">
-          📜 请输入出生年月日时，点击「立即排盘」<br />
+          📜 请输入出生年月日时，点击「开始排盘」<br />
           <span className="text-[11px] text-ink-400 mt-1 block">推荐使用真太阳时校正（出生地经度越准越好）</span>
         </div>
       )}
