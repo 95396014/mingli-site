@@ -90,7 +90,7 @@ function Collapsible({ title, children, defaultOpen = false }) {
 
 export default function Meihua() {
   const nav = useNavigate()
-  const { user } = useAuthStore()
+  const { user, refreshUser } = useAuthStore()
   const [mode, setMode] = useState('num')
   const [num, setNum] = useState({ up: 7, down: 3 })
   const [solarDate, setSolarDate] = useState(() => {
@@ -159,6 +159,9 @@ export default function Meihua() {
     if (!user) { if (confirm('请先登录后使用 AI 解读')) nav('/login'); return }
     setAiLoading(true); setAiErr(''); setAiContent('')
     try {
+      await refreshUser()
+    } catch {}
+    try {
       const { data } = await api.post('/ai/interpret', {
         type:'meihua',
         payload: {
@@ -180,7 +183,23 @@ export default function Meihua() {
       })
       setAiContent(data.content)
     } catch (e) {
-      setAiErr(e.response?.data?.error || e.message)
+      let msg = ''
+      const status = e.response?.status
+      const rawData = e.response?.data
+      if (typeof rawData === 'object' && rawData?.error) {
+        msg = rawData.error
+      } else if (typeof rawData === 'string' && rawData.startsWith('<!')) {
+        msg = '服务器暂时不可用 (502)，请稍后重试'
+      } else if (e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT') {
+        msg = '请求超时，请稍后重试'
+      } else if (status === 402) {
+        msg = rawData?.error || '额度不足，请开通会员或购买次数'
+      } else if (status) {
+        msg = `服务器错误 (${status})，请稍后重试`
+      } else {
+        msg = `网络错误：${e.message || '未知错误'}`
+      }
+      setAiErr(msg)
     } finally {
       setAiLoading(false)
     }
@@ -402,6 +421,17 @@ export default function Meihua() {
             </div>
             {!user && <Link to="/login" className="text-[12px] text-primary-700 underline">请先登录</Link>}
           </div>
+          {user && (
+            <div className="flex items-center gap-2 mb-2 text-[12px] flex-wrap">
+              {user.is_admin && <span className="tag wx-shui text-[10px]">管理员</span>}
+              {user.is_vip && <span className="tag wx-huo text-[10px]">VIP会员</span>}
+              {!user.is_admin && !user.is_vip && (user.ai_credits > 0) && <span className="tag wx-tu text-[10px]">已购次数</span>}
+              {!user.is_admin && !user.is_vip && user.ai_credits === 0 && <span className="tag wx-jin text-[10px]">普通用户</span>}
+              <span className="text-ink-500">剩余额度：</span>
+              <b className="text-primary-700">{user.is_admin ? '无限' : (user.ai_credits || 0) + ' 次'}</b>
+              <button onClick={() => refreshUser()} className="text-[10px] text-ink-400 hover:text-primary-600 ml-1">🔄 刷新</button>
+            </div>
+          )}
           <button className="btn-mo w-full" onClick={onAi} disabled={aiLoading || !user}>
             {aiLoading ? '🔮 大师推演中…（约 10-30 秒）' : (user ? '🔮 请 AI 大师断卦（含吉凶/应期/建议）' : '🔒 登录后可用')}
           </button>

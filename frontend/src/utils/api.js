@@ -16,15 +16,14 @@ if (!API_BASE && typeof window !== 'undefined') {
 
 const api = axios.create({
   baseURL: API_BASE || '/',
-  timeout: 90000 // AI 解读需要稍长，给 90s
+  timeout: 90000,
+  responseType: 'json'
 })
 
 api.interceptors.request.use(config => {
   const token = useAuthStore.getState().token
   if (token) config.headers.Authorization = `Bearer ${token}`
-  // 后端 CORS 允许任何 Origin；如果是完整 URL，确保末尾不带斜杠 + 路径是 /api 开头
   if (config.url && !config.url.startsWith('/')) {
-    // 不做处理，用户传绝对 URL 就按原样
   } else if (!config.url?.startsWith('/api')) {
     config.url = '/api' + (config.url || '')
   }
@@ -36,6 +35,10 @@ api.interceptors.response.use(
   err => {
     if (err.response?.status === 401) {
       useAuthStore.getState().logout()
+    }
+    // 兼容 Railway 等代理层返回的 HTML 错误页
+    if (err.response && typeof err.response.data === 'string' && err.response.data.startsWith('<!')) {
+      err.response.data = { error: `服务器暂时不可用 (${err.response.status})，请稍后重试` }
     }
     return Promise.reject(err)
   }

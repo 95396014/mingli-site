@@ -95,7 +95,7 @@ function selectOptions(range, pad = false) {
 
 export default function Bazi() {
   const nav = useNavigate()
-  const { user } = useAuthStore()
+  const { user, refreshUser } = useAuthStore()
   const now = new Date()
   const [historyList, setHistoryList] = useState(() => getHistory())
   const [showHistory, setShowHistory] = useState(false)
@@ -219,9 +219,30 @@ export default function Bazi() {
     if (!user) { if (confirm('请先登录后使用 AI 解读')) nav('/login'); return }
     setAiLoading(true); setAiErr(''); setAiContent('')
     try {
+      await refreshUser()
+    } catch {}
+    try {
       const { data } = await api.post('/ai/interpret', { type:'bazi', payload: result, question })
       setAiContent(data.content)
-    } catch (e) { setAiErr(e.response?.data?.error || e.message) }
+    } catch (e) {
+      let msg = ''
+      const status = e.response?.status
+      const rawData = e.response?.data
+      if (typeof rawData === 'object' && rawData?.error) {
+        msg = rawData.error
+      } else if (typeof rawData === 'string' && rawData.startsWith('<!')) {
+        msg = '服务器暂时不可用 (502)，请稍后重试'
+      } else if (e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT') {
+        msg = '请求超时，请稍后重试'
+      } else if (status === 402) {
+        msg = rawData?.error || '额度不足，请开通会员或购买次数'
+      } else if (status) {
+        msg = `服务器错误 (${status})，请稍后重试`
+      } else {
+        msg = `网络错误：${e.message || '未知错误'}`
+      }
+      setAiErr(msg)
+    }
     finally { setAiLoading(false) }
   }
 
@@ -654,6 +675,17 @@ export default function Bazi() {
               {aiLoading ? '解读中…' : '开始 AI 解读'}
             </button>
           </div>
+          {user && (
+            <div className="flex items-center gap-2 mb-2 text-[12px]">
+              {user.is_admin && <span className="tag wx-shui text-[10px]">管理员</span>}
+              {user.is_vip && <span className="tag wx-huo text-[10px]">VIP会员</span>}
+              {!user.is_admin && !user.is_vip && (user.ai_credits > 0) && <span className="tag wx-tu text-[10px]">已购次数</span>}
+              {!user.is_admin && !user.is_vip && user.ai_credits === 0 && <span className="tag wx-jin text-[10px]">普通用户</span>}
+              <span className="text-ink-500">剩余额度：</span>
+              <b className="text-primary-700">{user.is_admin ? '无限' : (user.ai_credits || 0) + ' 次'}</b>
+              <button onClick={() => refreshUser()} className="text-[10px] text-ink-400 hover:text-primary-600 ml-1">🔄 刷新</button>
+            </div>
+          )}
           <textarea className="field min-h-[88px] mb-2 text-[13px]" placeholder="想问什么？可留空使用默认模板"
             value={question} onChange={e=>setQuestion(e.target.value)} />
           {aiErr && <div className="mb-2 p-3 rounded-lg bg-red-50 text-red-700 text-[13px] border border-red-100">⚠️ {aiErr}</div>}

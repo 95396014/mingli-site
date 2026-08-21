@@ -10,10 +10,13 @@ import Admin from './pages/Admin.jsx'
 import { useAuthStore } from './store/auth.js'
 
 function Layout({ children }) {
-  const { user, logout } = useAuthStore()
+  const { user, logout, refreshUser } = useAuthStore()
   const loc = useLocation()
   const isAdmin = loc.pathname.startsWith('/admin')
   useEffect(() => { window.scrollTo(0, 0) }, [loc.pathname])
+  useEffect(() => {
+    if (user) refreshUser()
+  }, [user?.id])
   if (isAdmin) return <div className="min-h-screen">{children}</div>
 
   const tabs = [

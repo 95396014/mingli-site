@@ -171,51 +171,41 @@ ${JSON.stringify(payload, null, 2)}`
         data: e.response?.data,
         code: e.code
       })
-      const errMsg = e.response?.data?.error?.message || e.message || '未知错误'
+      const errData = e.response?.data
+      const errMsg = (typeof errData === 'object' && errData?.error)
+        ? (errData.error.message || errData.error)
+        : (errData?.message || e.message || '未知错误')
       const errStatus = e.response?.status
       
-      // 认证错误：回退到演示模式
-      const isAuthError = errMsg.includes('Authentication') || 
-                         errMsg.includes('invalid') || 
-                         errMsg.includes('Unauthorized') ||
-                         errMsg.includes('API Key')
-      // 余额不足：回退到演示模式
-      const isBalanceError = errMsg.includes('402') || 
-                            errMsg.includes('Payment') || 
-                            errMsg.includes('余额') ||
-                            errMsg.includes('quota') ||
-                            errMsg.includes('insufficient')
+      // 所有错误（包括网络超时、认证、余额、限流、服务端错误等）：都回退到演示模式
+      // 不再返回 502，避免 Railway 代理层误报
+      const isNetworkError = !e.response && (e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT' || e.code === 'ENOTFOUND')
+      const errType = isNetworkError ? '网络超时' : (errStatus ? `服务异常(${errStatus})` : '未知异常')
       
-      if (isAuthError || isBalanceError) {
-        console.warn('[deepseek] API Key问题，回退到演示模式:', errMsg)
-        content =
-`⚠️ AI 服务当前为演示模式（${isAuthError ? 'API Key 认证失败' : '账户余额不足'}）。
+      console.warn('[deepseek] AI异常，回退到演示模式:', { errType, errMsg, errStatus })
+      content =
+`⚠️ AI 服务暂时不可用（${errType}）。
 
-请检查：
-${isAuthError ? '1. API Key 是否正确\n2. API Key 是否已过期\n3. 请到 https://platform.deepseek.com 重新创建' : '1. 账户是否有足够余额\n2. 请到 https://platform.deepseek.com 充值'}
+错误详情：${errMsg}
 
-以下为你传入的排盘数据概览：
+可能原因：
+1. 网络连接超时
+2. API Key 认证失败或余额不足
+3. 请求过于频繁，请稍后再试
+4. AI 服务暂时不可用
+
+系统已自动为您生成排盘数据概览：
 类型：${type}
 月令旺衰：${JSON.stringify(payload.wangLevel || '')}
-体用关系：${JSON.stringify(payload.shiShenCount || '')}`
-      } else {
-        // 其他错误：返回详细错误信息
-        console.error('[deepseek] non-auth error:', errMsg)
-        return res.status(502).json({ 
-          error: `AI 服务异常（${errStatus || 'unknown'}）：${errMsg}`,
-          details: { 
-            message: e.message, 
-            code: e.code,
-            status: errStatus 
-          }
-        })
-      }
+体用关系：${JSON.stringify(payload.shiShenCount || '')}
+
+请稍后重试，或联系管理员检查 AI 服务配置。`
     }
   }
 
   // AI 调用成功后扣次
   const now = Date.now()
-  if (auth.type === 'free') {
+  if (auth.type === 'free_trial') {
     await db.prepare('UPDATE users SET free_daily_used = free_daily_used + 1, updated_at = ? WHERE id = ?').run(now, req.user.id)
   } else if (auth.type === 'vip' || auth.type === 'paid') {
     await db.prepare('UPDATE users SET ai_credits = MAX(0, ai_credits - 1), updated_at = ? WHERE id = ?').run(now, req.user.id)
