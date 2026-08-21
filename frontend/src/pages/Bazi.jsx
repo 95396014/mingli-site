@@ -551,15 +551,30 @@ export default function Bazi() {
           </div>
           <div className="grid md:grid-cols-2 gap-3">
             <div className="rounded-xl border border-primary-200 bg-gradient-to-br from-primary-50 via-white to-white p-3.5">
-              <div className="flex items-center gap-2 mb-1.5">
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                 <span className="font-bold text-[14px] font-song text-primary-800">命局格局</span>
-                {result.geju.isTouChu && <span className="tag wx-mu text-[10px]">透干有力</span>}
+                {result.geju.isTouChu && <span className="tag wx-mu text-[10px]">月令透干</span>}
+                {result.geju.allTouChu?.length > 0 && <span className="tag wx-shui text-[10px]">全盘透干</span>}
                 {result.geju.sub?.length > 0 && result.geju.sub.slice(0,2).map(s => (
                   <span key={s} className="tag wx-shui text-[10px]">{s}</span>
                 ))}
               </div>
               <div className="font-song text-[20px] text-primary-700 mb-1.5 font-bold">{result.geju.main}</div>
               <div className="text-[12.5px] text-ink-700 leading-[1.8]">{result.geju.detail}</div>
+              {result.geju.allTouChu?.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-primary-100">
+                  <div className="text-[12px] text-ink-600 mb-1 font-medium">📋 透干详情：</div>
+                  {result.geju.allTouChu.map((t, i) => (
+                    <div key={i} className="text-[11.5px] text-ink-700 mb-0.5">
+                      <span className="font-semibold text-primary-700">{t.shiShen}</span>
+                      <span className="text-ink-400">：</span>
+                      <span>{t.fromZhi}藏{t.gan}</span>
+                      <span className="text-ink-400"> → </span>
+                      <span className="text-amber-700 font-semibold">{t.touGan.join('、')}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-white p-3.5">
@@ -583,6 +598,16 @@ export default function Bazi() {
               </div>
             </div>
           </div>
+
+          {/* 华盖贵人 */}
+          {result.huaGai && result.huaGai.exists && (
+            <div className="mt-3 p-2.5 rounded-lg bg-purple-50 border border-purple-200">
+              <div className="flex items-center gap-2 text-[12px]">
+                <span className="tag !bg-purple-100 !text-purple-700 text-[10px]">🌟 华盖贵人</span>
+                <span className="text-purple-700 font-medium">{result.huaGai.desc}</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 大运 + 流年 */}

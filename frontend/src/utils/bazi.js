@@ -185,7 +185,9 @@ export function calculateBazi({
       shiShen: shiShenOfGan(dayGan, c.g),
       wuxing: GAN_WUXING[c.g]
     }))
-    p.zhiShiShen = shiShenOfGan(dayGan, p.zhi.charAt(0) === p.zhi ? '甲' : '甲') // placeholder 无用
+    // 地支十神：本气藏干的十神
+    const benQi = (ZHI_CANGGAN[p.zhi] || [])[0]
+    p.zhiShiShen = benQi ? shiShenOfGan(dayGan, benQi.g) : ''
     p.zhiWX = ZHI_WUXING[p.zhi]
   })
 
@@ -256,31 +258,19 @@ export function calculateBazi({
   })
 
   // 格局：以月令为核心，看月令藏干 + 天干透出
-  const gejuInfo = gejuOf(yearGan, monthGan, monthZhi, dayGan, timeGan)
+  const gejuInfo = gejuOf(yearGan, monthGan, monthZhi, dayGan, timeGan, yearZhi, dayZhi, timeZhi)
   // 用神喜忌：基于日主旺衰做基础判断（简化版，够用）
   const yongShen = yongShenOf(wangLevel, meWX, monthWX, shiShenCount)
 
-  // 大运 & 流年（lunar-javascript）
-  const yun = ec.getYun(gender === 0 ? 1 : 0) // male=1, female=0
-  const dayunListRaw = yun.getDaYun() || []
-  const first = dayunListRaw[0]
-  const qiYunSui = first ? (typeof first.getStartAge === 'function' ? first.getStartAge() : 1) : 1
-  const qiYunSolar = first?.getStartSolar ? first.getStartSolar() : null
-  const qiYunDate = qiYunSolar ? qiYunSolar.toYmd() : '-'
-  const daYunList = dayunListRaw.slice(0, 10).map((dy, i) => {
-    const startAge = typeof dy.getStartAge === 'function' ? dy.getStartAge() : (qiYunSui + i * 10)
-    const endAge = typeof dy.getEndAge === 'function' ? dy.getEndAge() : (startAge + 9)
-    const startYear = typeof dy.getStartYear === 'function' ? dy.getStartYear() : null
-    const endYear = typeof dy.getEndYear === 'function' ? dy.getEndYear() : null
-    const ganzhi = typeof dy.getGanZhi === 'function' ? dy.getGanZhi() : '-'
-    let liuNian = []
-    try { liuNian = (dy.getLiuNian ? dy.getLiuNian().slice(0, 10) : []).map(ln => ({
-      year: typeof ln.getYear === 'function' ? ln.getYear() : null,
-      ganzhi: typeof ln.getGanZhi === 'function' ? ln.getGanZhi() : '-',
-      age: startAge + (ln.getYear ? (ln.getYear() - startYear) : 0)
-    })) } catch(e) {}
-    return { idx: i, startAge, endAge, startYear, endYear, ganzhi, liuNian }
+  // 大运 & 流年（手动计算，确保与传统排盘一致）
+  const { qiYunAge, daYunList } = calculateDaYun({
+    yearGan, monthGan, monthZhi, dayGan, gender, birthDate: d
   })
+  const qiYunSui = Math.max(1, Math.round(qiYunAge))
+  const qiYunDate = birthDate.getFullYear() + qiYunAge + '岁起运'
+
+  // 华盖贵人
+  const huaGai = getHuaGai(yearZhi, dayZhi, monthZhi)
 
   return {
     pillars, dayGan, dayZhi,
@@ -311,6 +301,7 @@ export function calculateBazi({
     geju: gejuInfo, yongShen: yongShen,
     qiYunSui, qiYunDate,
     daYunList,
+    huaGai,
     solarTerm: (typeof lunar.getJieQi === 'function') ? (lunar.getJieQi()?.getName?.() || lunar.getJieQi() || '') : '',
     nextSolarTerm: lunar.getNextJieQi?.()?.getName?.() || '',
     nextSolarTermDate: lunar.getNextJieQi?.()?.getSolar?.()?.toYmd?.() || ''
@@ -329,29 +320,59 @@ function wangOf(dayGan, monthWX) {
 }
 
 // 简易格局判断：以月令为核心 + 天干透出（子平真诠简化版）
-// 返回 { main, detail, desc }
-function gejuOf(yearGan, monthGan, monthZhi, dayGan, timeGan) {
+// 返回 { main, detail, desc, allTouChu }
+function gejuOf(yearGan, monthGan, monthZhi, dayGan, timeGan, yearZhi, dayZhi, timeZhi) {
   const cang = ZHI_CANGGAN[monthZhi] || []
   const tianGan = [ { who:'年', g:yearGan }, { who:'月', g:monthGan }, { who:'时', g:timeGan } ]
-  function touChu(ganList /* 要找的藏干十神 */) {
-    // 月令藏干某气对应十神
-    const ss = ganList.map(g => ({ g, ss: shiShenOfGan(dayGan, g.g) }))
-    // 看对应十神是否在年/月/时干透出（含月干本身）
-    const tou = tianGan.filter(tg => ganList.some(c => shiShenOfGan(dayGan, c.g) === shiShenOfGan(dayGan, tg.g)))
-    return { ss, tou }
-  }
+
+  // 收集所有地支藏干（用于检测透干）
+  const allZhiCang = []
+  const zhiList = [
+    { name:'年支', zhi:yearZhi },
+    { name:'月支', zhi:monthZhi },
+    { name:'日支', zhi:dayZhi },
+    { name:'时支', zhi:timeZhi }
+  ]
+  zhiList.forEach(z => {
+    const cg = ZHI_CANGGAN[z.zhi] || []
+    cg.forEach(c => {
+      allZhiCang.push({ zhi:z.zhi, gan:c.g, weight:c.w, shiShen:shiShenOfGan(dayGan, c.g), src:z.name })
+    })
+  })
+
+  // 获取所有天干的十神
+  const tianGanShiShen = tianGan.map(tg => ({
+    ...tg,
+    shiShen: shiShenOfGan(dayGan, tg.g)
+  }))
+
+  // 检测哪些藏干十神在天干有透出
+  const allTouChu = []
+  const checkedShiShen = new Set()
+  allZhiCang.forEach(c => {
+    if (checkedShiShen.has(c.shiShen)) return
+    const touGan = tianGanShiShen.filter(tg => tg.shiShen === c.shiShen)
+    if (touGan.length > 0) {
+      allTouChu.push({
+        shiShen: c.shiShen,
+        fromZhi: c.src,
+        gan: c.gan,
+        touGan: touGan.map(t => `${t.who}干${t.g}`)
+      })
+      checkedShiShen.add(c.shiShen)
+    }
+  })
 
   // 取月支本气十神作为主格局
   const benQi = cang[0]
   const mainSS = benQi ? shiShenOfGan(dayGan, benQi.g) : null
-  // 是否透出
+  // 月令本气是否透出天干
   const touTianGan = tianGan.filter(tg => shiShenOfGan(dayGan, tg.g) === mainSS)
   const main = mainSS ? `${mainSS}格` : '月令取格不明显'
 
   // 其它兼格
   const jian = []
   if (mainSS === '正官' || mainSS === '七杀') {
-    // 官杀是否有印
     const youYin = tianGan.some(tg => ['正印','偏印'].includes(shiShenOfGan(dayGan, tg.g)))
     if (youYin && mainSS === '七杀') jian.push('杀印相生')
     if (youYin && mainSS === '正官') jian.push('官印相生')
@@ -366,10 +387,23 @@ function gejuOf(yearGan, monthGan, monthZhi, dayGan, timeGan) {
     jian.push('枭神夺食（或印生食伤）')
   }
 
+  // 官杀混杂检测
+  const guanShaCount = tianGan.filter(tg => ['正官','七杀'].includes(shiShenOfGan(dayGan, tg.g))).length
+  if (guanShaCount >= 2) jian.push('官杀混杂')
+
+  // 双正官/双七杀检测
+  const zhengGuanCount = tianGan.filter(tg => shiShenOfGan(dayGan, tg.g) === '正官').length
+  const qiShaCount = tianGan.filter(tg => shiShenOfGan(dayGan, tg.g) === '七杀').length
+  if (zhengGuanCount >= 2) jian.push('双正官透')
+  if (qiShaCount >= 2) jian.push('双七杀透')
+
   let desc = ''
   desc += `月令月支【${monthZhi}】，本气藏干【${benQi?.g}】→ 取为 ${main}。`
-  if (touTianGan.length) desc += ` 天干透出：${touTianGan.map(t=>t.who+'干'+t.g).join('、')}（有力）。`
-  else desc += ` 天干未透出，藏而不露。`
+  if (touTianGan.length) desc += ` 月令本气【${mainSS}】透于天干：${touTianGan.map(t=>t.who+'干'+t.g).join('、')}。`
+  else desc += ` 月令本气未透，藏而不露。`
+  if (allTouChu.length) {
+    desc += ` 全盘透干：` + allTouChu.map(t => `${t.shiShen}(${t.fromZhi}${t.gan}→${t.touGan.join('、')})`).join('、') + '。'
+  }
   if (jian.length) desc += ` 兼看：${jian.join(' / ')}。`
 
   return {
@@ -378,6 +412,7 @@ function gejuOf(yearGan, monthGan, monthZhi, dayGan, timeGan) {
     detail: desc,
     isTouChu: touTianGan.length > 0,
     touChu: touTianGan,
+    allTouChu
   }
 }
 
@@ -415,3 +450,127 @@ function yongShenOf(wangLevel, meWX, monthWX, shiShenCount) {
 
 // 节气日期工具（给UI显示用）
 export const SOLAR_TERMS = ['小寒','大寒','立春','雨水','惊蛰','春分','清明','谷雨','立夏','小满','芒种','夏至','小暑','大暑','立秋','处暑','白露','秋分','寒露','霜降','立冬','小雪','大雪','冬至']
+
+// 华盖贵人：年支+日支判断
+// 申子辰→辰，寅午戌→戌，巳酉丑→丑，亥卯未→未
+export const HUA_GAI_MAP = {
+  '申子辰': '辰', '辰申子': '辰', '子辰申': '辰',
+  '寅午戌': '戌', '午戌寅': '戌', '戌寅午': '戌',
+  '巳酉丑': '丑', '酉丑巳': '丑', '丑巳酉': '丑',
+  '亥卯未': '未', '卯未亥': '未', '未亥卯': '未'
+}
+
+// 生成大运列表（手动计算，确保与传统排盘一致）
+export function calculateDaYun({ yearGan, monthGan, monthZhi, dayGan, gender, birthDate }) {
+  // 传统规则：阳男阴女顺排，阴男阳女逆排
+  // 甲丙戊庚壬为阳干，乙丁己辛癸为阴干
+  const yangGans = ['甲','丙','戊','庚','壬']
+  const isYangYear = yangGans.includes(yearGan)
+  // gender: 0=男, 1=女
+  // 阳男阴女 → 顺排
+  // 阴男阳女 → 逆排
+  const isShun = (isYangYear && gender === 0) || (!isYangYear && gender === 1)
+
+  // 起运年龄：出生到最近节气的天数 / 3
+  // 顺排（阳男阴女）：出生到下一个节气
+  // 逆排（阴男阳女）：出生到上一个节气
+  let qiYunAge = 1
+  try {
+    const lunar = Solar.fromDate(birthDate).getLunar()
+    const jq = lunar.getJieQi?.()
+    const jqSolar = jq?.getSolar?.()
+    if (jqSolar) {
+      const jqMs = new Date(jqSolar.getYear(), jqSolar.getMonth()-1, jqSolar.getDay()).getTime()
+      const birthMs = birthDate.getTime()
+      let diffMs, diffDays
+      if (isShun) {
+        // 顺排：出生到下一个节气
+        const nextJq = lunar.getNextJieQi?.()
+        if (nextJq) {
+          const nextSolar = nextJq.getSolar()
+          const nextMs = new Date(nextSolar.getYear(), nextSolar.getMonth()-1, nextSolar.getDay()).getTime()
+          diffMs = nextMs - birthMs
+          diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+        }
+      } else {
+        // 逆排：出生到上一个节气
+        diffMs = birthMs - jqMs
+        diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+      }
+      if (diffDays > 0) {
+        qiYunAge = Math.floor(diffDays / 3) / 12
+        if (qiYunAge < 0) qiYunAge = 1
+      }
+    }
+  } catch(e) { /* fallback */ }
+
+  // 大运排列：从月柱的下一个干支开始，按顺/逆方向排列
+  const ganIdx = GAN.indexOf(monthGan)
+  const zhiIdx = ZHI.indexOf(monthZhi)
+
+  // 大运从月柱的下一个干支开始
+  const daYunList = []
+  let curGanIdx = (ganIdx + 1) % 10
+  let curZhiIdx = (zhiIdx + 1) % 12
+
+  for (let i = 0; i < 10; i++) {
+    const gz = GAN[curGanIdx] + ZHI[curZhiIdx]
+    const startAge = Math.max(1, Math.round(qiYunAge + i * 10))
+    const endAge = startAge + 9
+
+    // 计算流年
+    const startYear = birthDate.getFullYear() + startAge
+    const liuNian = []
+    let liuGanIdx = curGanIdx
+    let liuZhiIdx = curZhiIdx
+    for (let j = 0; j < 10; j++) {
+      liuNian.push({
+        year: startYear + j,
+        ganzhi: GAN[liuGanIdx] + ZHI[liuZhiIdx],
+        age: startAge + j
+      })
+      liuGanIdx = (liuGanIdx + 1) % 10
+      liuZhiIdx = (liuZhiIdx + 1) % 12
+    }
+
+    daYunList.push({
+      idx: i,
+      ganzhi: gz,
+      startAge,
+      endAge,
+      startYear,
+      endYear: startYear + 9,
+      liuNian
+    })
+
+    // 按顺/逆方向移动到下一个大运
+    if (isShun) {
+      curGanIdx = (curGanIdx + 1) % 10
+      curZhiIdx = (curZhiIdx + 1) % 12
+    } else {
+      curGanIdx = (curGanIdx - 1 + 10) % 10
+      curZhiIdx = (curZhiIdx - 1 + 12) % 12
+    }
+  }
+
+  return { qiYunAge, daYunList }
+}
+
+// 获取华盖贵人
+export function getHuaGai(yearZhi, dayZhi, monthZhi) {
+  // 年支和日支组合判断
+  const zhiCombo = yearZhi + dayZhi
+  for (const [k, v] of Object.entries(HUA_GAI_MAP)) {
+    if (k.includes(yearZhi) && k.includes(dayZhi)) {
+      // 再检查月令是否符合
+      const monthMatch = k.includes(monthZhi)
+      return {
+        exists: true,
+        zhi: v,
+        monthMatch,
+        desc: monthMatch ? `${yearZhi}${dayZhi}见${v}为华盖，月令${monthZhi}符合` : `${yearZhi}${dayZhi}见${v}为华盖，月令${monthZhi}未参与三合`
+      }
+    }
+  }
+  return { exists: false, zhi: '', monthMatch: false, desc: '' }
+}
