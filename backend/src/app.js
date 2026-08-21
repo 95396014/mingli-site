@@ -20,19 +20,7 @@ try { require('dotenv').config() } catch {}
   app.use(express.json())
   app.use(dbMiddleware)
 
-  app.get('/api/health', (req, res) => {
-    const hasApiKey = !!process.env.DEEPSEEK_API_KEY
-    const keyPrefix = process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.substring(0, 7) + '...' : 'not-set'
-    res.json({
-      ok: true,
-      ts: Date.now(),
-      deepseek: {
-        keyConfigured: hasApiKey,
-        keyPrefix: keyPrefix,
-        model: process.env.DEEPSEEK_MODEL || 'deepseek-chat'
-      }
-    })
-  })
+  app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }))
 
   // 公开：会员套餐列表（价格与后端一致，避免前端显示价≠下单价）
   const VIP_PLANS = [
