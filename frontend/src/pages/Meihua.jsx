@@ -107,8 +107,9 @@ export default function Meihua() {
     try {
       let r
       if (mode === 'num') {
-        if (!num.up || !num.down) return alert('请填上下卦数')
-        r = meihuaByNumber(+num.up, +num.down, +num.total)
+        if (!num.up || !num.down) return alert('请填上、下卦数')
+        const autoTotal = (+num.up) + (+num.down)
+        r = meihuaByNumber(+num.up, +num.down, autoTotal)
       } else {
         r = meihuaByTime(ZHI_INDEX[tm.yearZhi], +tm.month, +tm.day, ZHI_INDEX[tm.timeZhi])
       }
@@ -188,15 +189,31 @@ export default function Meihua() {
 
         {mode === 'num' && (
           <div className="grid grid-cols-1 gap-2">
-            <label><span className="field-label">上卦数（任意正整数）</span>
+            <label><span className="field-label">上卦数（任意正整数，除以8取余为上卦）</span>
               <input type="number" min="1" className="field" value={num.up} onChange={e=>setNum({...num, up:e.target.value})} />
             </label>
-            <label><span className="field-label">下卦数（任意正整数）</span>
+            <label><span className="field-label">下卦数（任意正整数，除以8取余为下卦）</span>
               <input type="number" min="1" className="field" value={num.down} onChange={e=>setNum({...num, down:e.target.value})} />
             </label>
-            <label><span className="field-label">动爻总数（留空=上+下）</span>
-              <input type="number" min="1" className="field" value={num.total} onChange={e=>setNum({...num, total:e.target.value})} />
-            </label>
+            <div className="rounded-xl border border-primary-200 bg-primary-50 px-3 py-2.5 text-[13px] text-ink-800 flex items-center justify-between">
+              <div>
+                <div className="text-primary-700 font-bold text-[13px]">📐 动爻自动推算</div>
+                <div className="text-[11px] text-ink-500 mt-0.5">
+                  上+下 = <b>{(+num.up||0) + (+num.down||0)}</b>
+                  {(() => {
+                    const s = (+num.up||0) + (+num.down||0)
+                    const m = s > 0 ? ((s - 1) % 6) + 1 : 0
+                    return <>，÷6 余 = <b className="text-primary-700">{m || '—'}</b>，动爻为第 <b className="text-primary-700">{m || '—'}</b> 爻</>
+                  })()}
+                </div>
+              </div>
+              <span className="tag wx-mu">自动</span>
+            </div>
+            <div className="text-[10px] text-ink-400 leading-relaxed">
+              · 上卦 = 上数 mod 8（0 取 8）<br/>
+              · 下卦 = 下数 mod 8（0 取 8）<br/>
+              · 动爻 = (上+下) mod 6（0 取 6），仅第 1~6 爻会变化
+            </div>
           </div>
         )}
 
@@ -208,16 +225,28 @@ export default function Meihua() {
               </select>
             </label>
             <label><span className="field-label">月（农历1-12）</span>
-              <input type="number" min="1" max="12" className="field" value={tm.month} onChange={e=>setTm({...tm, month:e.target.value})} />
+              <select className="field" value={tm.month} onChange={e=>setTm({...tm, month:+e.target.value})}>
+                {Array.from({length:12},(_,i)=>i+1).map(m=><option key={m} value={m}>{m}月</option>)}
+              </select>
             </label>
             <label><span className="field-label">日（农历1-30）</span>
-              <input type="number" min="1" max="30" className="field" value={tm.day} onChange={e=>setTm({...tm, day:e.target.value})} />
+              <select className="field" value={tm.day} onChange={e=>setTm({...tm, day:+e.target.value})}>
+                {Array.from({length:30},(_,i)=>i+1).map(d=><option key={d} value={d}>{d}日</option>)}
+              </select>
             </label>
             <label><span className="field-label">时辰</span>
               <select className="field" value={tm.timeZhi} onChange={e=>setTm({...tm, timeZhi:e.target.value})}>
                 {ZHI_OPTS.map((z,i)=><option key={z} value={z}>{z}时（{i+1}）</option>)}
               </select>
             </label>
+            <div className="col-span-2 rounded-xl border border-primary-200 bg-primary-50 px-3 py-2 text-[12px] text-ink-700">
+              <div className="text-primary-700 font-bold mb-0.5">🕒 时间起卦推导</div>
+              <div className="space-y-0.5 text-[11px]">
+                <div>上卦 = (年支{ZHI_INDEX[tm.yearZhi]||'?'} + 月{+tm.month} + 日{+tm.day}) mod 8</div>
+                <div>下卦 = (上卦和 + 时辰{ZHI_INDEX[tm.timeZhi]||'?'}) mod 8</div>
+                <div>动爻 = (年+月+日+时) mod 6</div>
+              </div>
+            </div>
           </div>
         )}
 
