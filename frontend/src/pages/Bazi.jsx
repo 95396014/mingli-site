@@ -87,6 +87,7 @@ export default function Bazi() {
     lunarLeap: false,
     dstSwitch: 'auto',        // auto | on | off
     trueSolar: true,         // 是否启用真太阳时（=是否应用经度修正）
+    zaoWanZi: false,         // 早晚子时（23:00后算第二天早子时）
     lng: 120,
     gender: 0,
     name: '',
@@ -137,123 +138,185 @@ export default function Bazi() {
     finally { setAiLoading(false) }
   }
 
+  function toggleOpt(key, exclusive) {
+    if (exclusive) {
+      // 互斥单选逻辑：真太阳时、早晚子时、夏令时三个互斥
+      setForm({
+        ...form,
+        trueSolar: key === 'trueSolar',
+        zaoWanZi: key === 'zaoWanZi',
+        // 夏令时用 dstSwitch 控制，单选 true → 自动识别模式开启
+        dstSwitch: key === 'dst' ? 'auto' : 'off',
+      })
+    } else {
+      setForm({ ...form, [key]: !form[key] })
+    }
+  }
+
   return (
     <div className="pb-4">
-      {/* 输入卡 - 问真风格 */}
-      <div className="paper-card p-4 mb-3">
-        <h2 className="font-song font-bold text-[17px] text-ink-900 mb-3 flex items-center gap-2">
-          <span className="seal text-xs">排盘</span> 八字排盘
-        </h2>
-
-        {/* 日历类型切换 */}
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          {[
-            { k:'solar', l:'公历 / 阳历' },
-            { k:'lunar', l:'农历 / 阴历' },
-          ].map(o => (
-            <button key={o.k} type="button"
-              onClick={()=>setForm({...form, calendar: o.k})}
-              className={`py-2.5 rounded-xl font-song font-bold text-[15px] border transition ${form.calendar===o.k ? 'bg-primary-700 text-white border-primary-800 shadow' : 'bg-white text-ink-600 border-ink-200'}`}>
-              {o.l}
-            </button>
-          ))}
+      {/* 输入卡 - yrydai 风格：一行一输入项 */}
+      <div className="paper-card p-0 mb-3 overflow-hidden">
+        {/* 顶部标题条 + 农历/阳历切换 */}
+        <div className="bg-gradient-to-r from-[#00b3a0] to-[#00c9b3] text-white">
+          <div className="grid grid-cols-2">
+            {[
+              { k:'solar', l:'公历 / 阳历' },
+              { k:'lunar', l:'农历 / 阴历' },
+            ].map(o => (
+              <button key={o.k} type="button"
+                onClick={()=>setForm({...form, calendar: o.k})}
+                className={`py-3 font-song font-bold text-[15px] transition ${form.calendar===o.k ? 'bg-white text-[#009e8d] shadow-inner' : 'text-white/90'}`}>
+                {o.l}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* 姓名 + 性别 */}
-        <div className="grid grid-cols-3 gap-2.5 mb-3">
-          <label className="col-span-1"><span className="field-label">姓名（可选）</span>
-            <input className="field" placeholder="例如：张三" value={form.name}
+        <div className="p-4">
+          {/* 客户名称 */}
+          <div className="flex items-center justify-between py-3 border-b border-ink-100">
+            <span className="text-[15px] font-medium text-ink-800">客户名称</span>
+            <input className="!border-0 !bg-transparent !p-0 text-right text-[14px] text-ink-500 placeholder:text-ink-300 focus:!ring-0 w-48"
+              placeholder="请输入名称(选填)" value={form.name}
               onChange={e=>setForm({...form, name:e.target.value})} />
-          </label>
-          <label className="col-span-2"><span className="field-label">性别</span>
-            <div className="grid grid-cols-2 gap-2">
-              {[{v:0,l:'乾造 · 男'},{v:1,l:'坤造 · 女'}].map(o => (
-                <button key={o.v} type="button" onClick={()=>setForm({...form,gender:o.v})}
-                  className={`py-2 rounded-lg text-[14px] font-medium border ${+form.gender===o.v ? 'bg-primary-700 text-white border-primary-800' : 'bg-white text-ink-600 border-ink-200'}`}>
+          </div>
+
+          {/* 选择性别 */}
+          <div className="flex items-center justify-between py-3 border-b border-ink-100">
+            <span className="text-[15px] font-medium text-ink-800">选择性别</span>
+            <div className="flex items-center gap-5">
+              {[{v:0,l:'男'},{v:1,l:'女'}].map(o => (
+                <label key={o.v} className="inline-flex items-center gap-2 text-[14px] text-ink-700 cursor-pointer">
+                  <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${+form.gender===o.v ? 'border-[#00b3a0]' : 'border-ink-300'}`}>
+                    {+form.gender===o.v && <span className="w-2.5 h-2.5 rounded-full bg-[#00b3a0]" />}
+                  </span>
                   {o.l}
-                </button>
+                </label>
               ))}
             </div>
-          </label>
-        </div>
+          </div>
 
-        {/* 日期 / 时间 — 分阳历 & 农历 */}
-        <div className="grid grid-cols-2 gap-2.5">
-          {form.calendar === 'solar' ? (
-            <>
-              <label><span className="field-label">公历年</span>
-                <input type="number" className="field" value={form.year} onChange={e=>setForm({...form, year:e.target.value})} />
+          {/* 出生时间 */}
+          <div className="flex items-center justify-between py-3 border-b border-ink-100"
+               onClick={()=>document.getElementById('bazi-time-btn')?.click()}>
+            <span className="text-[15px] font-medium text-ink-800">出生时间</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[14px] text-ink-500">
+                {form.calendar === 'solar'
+                  ? `${form.year}年${form.month}月${form.day}日 ${String(form.hour).padStart(2,'0')}:${String(form.minute).padStart(2,'0')}`
+                  : `农历${form.year}年${form.lunarLeap?'闰':''}${form.month}月${form.day}日 ${String(form.hour).padStart(2,'0')}:${String(form.minute).padStart(2,'0')}`}
+              </span>
+              <span className="text-ink-300">›</span>
+            </div>
+          </div>
+
+          {/* 展开式日期时间输入（点击出生时间时展开） */}
+          <div id="bazi-time-inputs" className="pb-3 border-b border-ink-100">
+            <div className="grid grid-cols-2 gap-2.5 pt-3">
+              {form.calendar === 'solar' ? (
+                <>
+                  <label><span className="field-label">公历年</span>
+                    <input type="number" className="field" value={form.year} onChange={e=>setForm({...form, year:e.target.value})} />
+                  </label>
+                  <label><span className="field-label">公历月</span>
+                    <input type="number" min={1} max={12} className="field" value={form.month} onChange={e=>setForm({...form, month:e.target.value})} />
+                  </label>
+                  <label><span className="field-label">公历日</span>
+                    <input type="number" min={1} max={31} className="field" value={form.day} onChange={e=>setForm({...form, day:e.target.value})} />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label><span className="field-label">农历年</span>
+                    <input type="number" className="field" value={form.year} onChange={e=>setForm({...form, year:e.target.value})} />
+                  </label>
+                  <label className="flex items-end gap-2">
+                    <div className="flex-1"><span className="field-label">农历月</span>
+                      <input type="number" min={1} max={12} className="field" value={form.month} onChange={e=>setForm({...form, month:e.target.value})} />
+                    </div>
+                    <label className="inline-flex items-center gap-1 pb-2 text-[12px] text-ink-600 whitespace-nowrap">
+                      <input type="checkbox" className="!w-4 !h-4" checked={!!form.lunarLeap}
+                        onChange={e=>setForm({...form, lunarLeap: e.target.checked})}/> 闰月
+                    </label>
+                  </label>
+                  <label><span className="field-label">农历日</span>
+                    <input type="number" min={1} max={30} className="field" value={form.day} onChange={e=>setForm({...form, day:e.target.value})} />
+                  </label>
+                </>
+              )}
+              <label><span className="field-label">时（0-23）</span>
+                <input type="number" min={0} max={23} className="field" value={form.hour} onChange={e=>setForm({...form, hour:e.target.value})} />
               </label>
-              <label><span className="field-label">公历月</span>
-                <input type="number" min={1} max={12} className="field" value={form.month} onChange={e=>setForm({...form, month:e.target.value})} />
+              <label><span className="field-label">分（0-59）</span>
+                <input type="number" min={0} max={59} className="field" value={form.minute} onChange={e=>setForm({...form, minute:e.target.value})} />
               </label>
-              <label className="col-span-2"><span className="field-label">公历日</span>
-                <input type="number" min={1} max={31} className="field" value={form.day} onChange={e=>setForm({...form, day:e.target.value})} />
-              </label>
-            </>
-          ) : (
-            <>
-              <label><span className="field-label">农历年</span>
-                <input type="number" className="field" value={form.year} onChange={e=>setForm({...form, year:e.target.value})} />
-              </label>
-              <label className="flex items-end gap-2">
-                <div className="flex-1"><span className="field-label">农历月</span>
-                  <input type="number" min={1} max={12} className="field" value={form.month} onChange={e=>setForm({...form, month:e.target.value})} />
-                </div>
-                <label className="inline-flex items-center gap-1 pb-2 text-[12px] text-ink-600">
-                  <input type="checkbox" className="!w-4 !h-4" checked={!!form.lunarLeap}
-                    onChange={e=>setForm({...form, lunarLeap: e.target.checked})}/> 闰月
+            </div>
+          </div>
+
+          {/* 出生地点 */}
+          <div className="flex items-center justify-between py-3 border-b border-ink-100">
+            <span className="text-[15px] font-medium text-ink-800">出生地点</span>
+            <div className="flex items-center gap-2 flex-1 justify-end">
+              <input className="!border-0 !bg-transparent !p-0 text-right text-[14px] text-ink-500 placeholder:text-ink-300 focus:!ring-0 w-40"
+                placeholder="请选择出生地点" value={form.place}
+                onChange={e=>{
+                  const v = e.target.value
+                  setForm(f => {
+                    const lngMap = {'北京':116.4,'上海':121.5,'广州':113.3,'深圳':114.1,'成都':104.1,'杭州':120.2,'武汉':114.3,'西安':108.9,'南京':118.8,'重庆':106.5,'天津':117.2,'苏州':120.6,'长沙':112.9,'沈阳':123.4,'青岛':120.4,'郑州':113.6,'大连':121.6,'厦门':118.1,'福州':119.3,'合肥':117.3,'济南':117.0,'昆明':102.7,'哈尔滨':126.6,'长春':125.3,'石家庄':114.5,'太原':112.5,'南昌':115.9,'南宁':108.3,'贵阳':106.6,'兰州':103.8,'乌鲁木齐':87.6,'拉萨':91.1,'海口':110.3,'呼和浩特':111.7,'银川':106.2,'西宁':101.8}
+                    let lng = 120
+                    for (const k of Object.keys(lngMap)) if (v.includes(k)) { lng = lngMap[k]; break }
+                    return {...f, place: v, lng}
+                  })
+                }} />
+              <input type="number" step="0.01" className="!border !border-ink-200 !rounded-lg !px-2 !py-1 text-right text-[12px] text-ink-500 w-20"
+                placeholder="经度" value={form.lng}
+                onChange={e=>setForm({...form, lng: e.target.value})}
+                title="出生地经度" />
+              <span className="text-ink-300">›</span>
+            </div>
+          </div>
+
+          {/* 选项行：真太阳时 / 早晚子时 / 夏令时 + 四柱反查 */}
+          <div className="flex items-center justify-between py-4 flex-wrap gap-3">
+            <div className="flex items-center gap-4 flex-wrap">
+              {[
+                { key:'trueSolar', label:'真太阳时', checked: form.trueSolar },
+                { key:'zaoWanZi', label:'早晚子时', checked: form.zaoWanZi },
+                { key:'dst', label:'夏令时', checked: form.dstSwitch !== 'off' },
+              ].map(opt => (
+                <label key={opt.key} className="inline-flex items-center gap-2 text-[14px] text-ink-700 cursor-pointer"
+                       onClick={()=>toggleOpt(opt.key, true)}>
+                  <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${opt.checked ? 'border-[#00b3a0]' : 'border-ink-300'}`}>
+                    {opt.checked && <span className="w-2.5 h-2.5 rounded-full bg-[#00b3a0]" />}
+                  </span>
+                  {opt.label}
                 </label>
-              </label>
-              <label className="col-span-2"><span className="field-label">农历日</span>
-                <input type="number" min={1} max={30} className="field" value={form.day} onChange={e=>setForm({...form, day:e.target.value})} />
-              </label>
-            </>
-          )}
-          <label><span className="field-label">时（0-23）</span>
-            <input type="number" min={0} max={23} className="field" value={form.hour} onChange={e=>setForm({...form, hour:e.target.value})} />
-          </label>
-          <label><span className="field-label">分（0-59）</span>
-            <input type="number" min={0} max={59} className="field" value={form.minute} onChange={e=>setForm({...form, minute:e.target.value})} />
-          </label>
-        </div>
-
-        {/* 高级：夏令时 + 真太阳时 + 经度 + 出生地 */}
-        <div className="mt-3 p-3 rounded-xl bg-gradient-to-br from-ink-50 to-white border border-ink-200 space-y-2.5">
-          <div className="font-song font-bold text-[13px] text-ink-700">⚙️ 排盘校正（更精准）</div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <label className="col-span-1"><span className="field-label">夏令时（北京夏令时 1986-1991）</span>
-              <select className="field" value={form.dstSwitch} onChange={e=>setForm({...form, dstSwitch:e.target.value})}>
-                <option value="auto">自动识别（推荐）</option>
-                <option value="on">强制使用（-1小时）</option>
-                <option value="off">关闭</option>
-              </select>
-              <div className="text-[10px] text-ink-400 mt-0.5">{dstHint}</div>
-            </label>
-            <label className="col-span-1 flex items-end gap-2">
-              <div className="flex-1"><span className="field-label">出生地经度</span>
-                <input type="number" step="0.01" className="field" value={form.lng} disabled={!form.trueSolar}
-                  onChange={e=>setForm({...form, lng:e.target.value})} />
-              </div>
-              <label className="inline-flex items-center gap-1 pb-2 text-[12px] text-ink-600 whitespace-nowrap">
-                <input type="checkbox" className="!w-4 !h-4"
-                  checked={!!form.trueSolar}
-                  onChange={e=>setForm({...form, trueSolar: e.target.checked})}/> 真太阳时
-              </label>
-            </label>
-            <label className="col-span-1"><span className="field-label">出生地（可选，展示用）</span>
-              <input className="field" placeholder="如：北京 / 上海 / 成都"
-                value={form.place} onChange={e=>setForm({...form, place:e.target.value})} />
-            </label>
+              ))}
+            </div>
+            <button type="button" className="px-4 py-1.5 rounded-md bg-[#00b3a0] text-white text-[13px] font-medium hover:bg-[#00a08f] transition"
+              onClick={()=>alert('四柱反查：根据八字反推出生时间，功能开发中')}>
+              四柱反查
+            </button>
           </div>
-          <div className="text-[10px] text-ink-400 leading-relaxed">
-            • 夏令时规则：仅 1986/5/4 ~ 1991/9/15 期间中国执行过，建议保持"自动识别"，与问真八字、元亨利贞等主流软件对齐。<br />
-            • 真太阳时：默认东经 120°（北京时间标准线）；若你知道出生地具体经度（北京 116.4、上海 121.5、成都 104.1、广州 113.3）可直接填入，排盘会自动校正（每差 1° ≈ ±4 分钟）。
+
+          {/* 提示 */}
+          <div className="text-[11px] text-ink-400 leading-relaxed mb-3">
+            {dstHint !== '不涉及夏令时' && form.dstSwitch !== 'off' && <span>· {dstHint}<br/></span>}
+            · 当前经度东经 {form.lng}°（真太阳时每差 1° ≈ ±4 分钟）
           </div>
         </div>
 
-        <button className="btn-zhusha w-full mt-4" onClick={onCalc} disabled={loading}>
-          {loading ? '排盘中…' : '✦ 立即排盘'}
+        {/* 开始排盘按钮 */}
+        <button className="w-full py-4 bg-gradient-to-r from-[#00b3a0] to-[#00c9b3] text-white text-[17px] font-song font-bold tracking-wider hover:from-[#00a08f] hover:to-[#00b8a4] transition disabled:opacity-60"
+          onClick={onCalc} disabled={loading} id="bazi-time-btn">
+          {loading ? '排盘中…' : '开 始 排 盘'}
+        </button>
+
+        {/* 排盘记录按钮 */}
+        <button className="w-full py-4 mt-2 bg-[#f6f2ec] text-ink-700 text-[16px] font-bold tracking-wider border-t border-ink-100 hover:bg-ink-50 transition"
+          onClick={()=>alert('排盘记录功能开发中')}>
+          排 盘 记 录
         </button>
       </div>
 
