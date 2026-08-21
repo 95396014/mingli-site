@@ -20,6 +20,19 @@ try { require('dotenv').config() } catch {}
   app.use(express.json())
   app.use(dbMiddleware)
 
+  // 全局错误保护：防止未捕获异常导致 Railway 返回 502
+  app.use((err, req, res, next) => {
+    console.error('[express] 未捕获错误:', err.message)
+    res.status(500).json({ error: '服务器内部错误，请稍后重试' })
+  })
+
+  process.on('uncaughtException', (err) => {
+    console.error('[node] 未捕获异常:', err.message)
+  })
+  process.on('unhandledRejection', (reason) => {
+    console.error('[node] 未处理的 Promise 拒绝:', reason?.message || reason)
+  })
+
   app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }))
 
   // 公开：会员套餐列表（价格与后端一致，避免前端显示价≠下单价）

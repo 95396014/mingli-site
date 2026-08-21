@@ -159,7 +159,7 @@ ${JSON.stringify(payload, null, 2)}`
         stream: false
       }, {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: 90000
+        timeout: 55000
       })
       content = data.choices?.[0]?.message?.content?.trim() || '(空响应)'
       tokens = data.usage?.total_tokens || 0
@@ -177,8 +177,6 @@ ${JSON.stringify(payload, null, 2)}`
         : (errData?.message || e.message || '未知错误')
       const errStatus = e.response?.status
       
-      // 所有错误（包括网络超时、认证、余额、限流、服务端错误等）：都回退到演示模式
-      // 不再返回 502，避免 Railway 代理层误报
       const isNetworkError = !e.response && (e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT' || e.code === 'ENOTFOUND')
       const errType = isNetworkError ? '网络超时' : (errStatus ? `服务异常(${errStatus})` : '未知异常')
       
@@ -203,26 +201,38 @@ ${JSON.stringify(payload, null, 2)}`
     }
   }
 
-  // AI 调用成功后扣次
+  // 安全扣次和日志（包裹在 try-catch 中，防止数据库故障导致 502）
   const now = Date.now()
-  if (auth.type === 'free_trial') {
-    await db.prepare('UPDATE users SET free_daily_used = free_daily_used + 1, updated_at = ? WHERE id = ?').run(now, req.user.id)
-  } else if (auth.type === 'vip' || auth.type === 'paid') {
-    await db.prepare('UPDATE users SET ai_credits = MAX(0, ai_credits - 1), updated_at = ? WHERE id = ?').run(now, req.user.id)
+  try {
+    if (auth.type === 'free_trial') {
+      await db.prepare('UPDATE users SET free_daily_used = free_daily_used + 1, updated_at = ? WHERE id = ?').run(now, req.user.id)
+    } else if (auth.type === 'vip' || auth.type === 'paid') {
+      await db.prepare('UPDATE users SET ai_credits = MAX(0, ai_credits - 1), updated_at = ? WHERE id = ?').run(now, req.user.id)
+    }
+    await db.prepare('INSERT INTO ai_logs (user_id,type,prompt,tokens_used,created_at) VALUES (?,?,?,?,?)')
+      .run(req.user.id, type, JSON.stringify({ question }).slice(0, 500), tokens, now)
+  } catch (dbErr) {
+    console.error('[deepseek] 数据库操作失败（不影响返回内容）:', dbErr.message)
   }
-  await db.prepare('INSERT INTO ai_logs (user_id,type,prompt,tokens_used,created_at) VALUES (?,?,?,?,?)')
-    .run(req.user.id, type, JSON.stringify({ question, payloadType: type }).slice(0, 500), tokens, now)
 
-  // 重新从 DB 拉一下额度，保证返回给前端是最新的
-  const updated = await db.prepare('SELECT ai_credits, free_daily_used FROM users WHERE id = ?').get(req.user.id) || {}
-  const remain =
-    auth.type === 'free' ? Math.max(0, FREE_LIMIT - (((req.user.free_daily_used||0) + 1))) :
-    (auth.type === 'admin' ? 9999 : Math.max(0, Number(updated.ai_credits)||0))
+  // 查询最新额度（也包裹 try-catch）
+  let remain = 0
+  let aiCredits = 0
+  let freeUsed = 0
+  try {
+    const updated = await db.prepare('SELECT ai_credits, free_daily_used FROM users WHERE id = ?').get(req.user.id) || {}
+    aiCredits = Number(updated.ai_credits) || 0
+    freeUsed = Number(updated.free_daily_used) || 0
+    remain = auth.type === 'admin' ? 9999 : Math.max(0, aiCredits)
+  } catch {
+    remain = auth.type === 'admin' ? 9999 : (Number(req.user.ai_credits) || 0)
+    aiCredits = Number(req.user.ai_credits) || 0
+    freeUsed = Number(req.user.free_daily_used) || 0
+  }
 
   res.json({
     content, tokens, remain, authType: auth.type,
-    aiCredits: Number(updated.ai_credits)||0,
-    freeUsed: Number(updated.free_daily_used)||0,
+    aiCredits, freeUsed
   })
 })
 
