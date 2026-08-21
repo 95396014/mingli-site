@@ -125,6 +125,13 @@ ${JSON.stringify(payload, null, 2)}`
   const apiUrl = process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/chat/completions'
   const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat'
 
+  console.log('[deepseek] config:', {
+    hasKey: !!apiKey,
+    keyPrefix: apiKey ? apiKey.substring(0, 10) + '...' : 'NOT_SET',
+    apiUrl,
+    model
+  })
+
   let content = ''
   let tokens = 0
 
@@ -142,6 +149,7 @@ ${JSON.stringify(payload, null, 2)}`
 体用关系：${JSON.stringify(payload.relation || payload.shiShenCount || '')}`
   } else {
     try {
+      console.log('[deepseek] calling API...', { model, messageCount: 2 })
       const { data } = await axios.post(apiUrl, {
         model,
         messages: [
@@ -156,24 +164,52 @@ ${JSON.stringify(payload, null, 2)}`
       })
       content = data.choices?.[0]?.message?.content?.trim() || '(空响应)'
       tokens = data.usage?.total_tokens || 0
+      console.log('[deepseek] success:', { tokens })
     } catch (e) {
-      console.error('[deepseek] err:', e.message, e.response?.data)
-      const errMsg = e.response?.data?.error?.message || e.message
-      const isAuthError = errMsg.includes('Authentication') || errMsg.includes('invalid') || errMsg.includes('Unauthorized')
-      if (isAuthError) {
-        console.warn('[deepseek] API Key 认证失败，回退到演示模式')
+      console.error('[deepseek] err:', {
+        message: e.message,
+        status: e.response?.status,
+        data: e.response?.data,
+        code: e.code
+      })
+      const errMsg = e.response?.data?.error?.message || e.message || '未知错误'
+      const errStatus = e.response?.status
+      
+      // 认证错误：回退到演示模式
+      const isAuthError = errMsg.includes('Authentication') || 
+                         errMsg.includes('invalid') || 
+                         errMsg.includes('Unauthorized') ||
+                         errMsg.includes('API Key')
+      // 余额不足：回退到演示模式
+      const isBalanceError = errMsg.includes('402') || 
+                            errMsg.includes('Payment') || 
+                            errMsg.includes('余额') ||
+                            errMsg.includes('quota') ||
+                            errMsg.includes('insufficient')
+      
+      if (isAuthError || isBalanceError) {
+        console.warn('[deepseek] API Key问题，回退到演示模式:', errMsg)
         content =
-`⚠️ AI 服务当前为演示模式（API Key 认证失败或未配置）。
+`⚠️ AI 服务当前为演示模式（${isAuthError ? 'API Key 认证失败' : '账户余额不足'}）。
 
-请在后端 .env 中设置有效的 DEEPSEEK_API_KEY 后重启服务，
-即可启用真实 AI 大师深度解读。
+请检查：
+${isAuthError ? '1. API Key 是否正确\n2. API Key 是否已过期\n3. 请到 https://platform.deepseek.com 重新创建' : '1. 账户是否有足够余额\n2. 请到 https://platform.deepseek.com 充值'}
 
 以下为你传入的排盘数据概览：
 类型：${type}
 月令旺衰：${JSON.stringify(payload.wangLevel || '')}
 体用关系：${JSON.stringify(payload.shiShenCount || '')}`
       } else {
-        return res.status(502).json({ error: 'AI 服务异常：' + errMsg })
+        // 其他错误：返回详细错误信息
+        console.error('[deepseek] non-auth error:', errMsg)
+        return res.status(502).json({ 
+          error: `AI 服务异常（${errStatus || 'unknown'}）：${errMsg}`,
+          details: { 
+            message: e.message, 
+            code: e.code,
+            status: errStatus 
+          }
+        })
       }
     }
   }
