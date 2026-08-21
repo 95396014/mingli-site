@@ -9,6 +9,7 @@
     "preview": "vite preview --host 0.0.0.0 --port 4173"
   },
   "dependencies": {
+    "@vant/area-data": "^2.1.0",
     "axios": "^1.6.7",
     "dayjs": "^1.11.10",
     "iztro": "^2.4.0",
