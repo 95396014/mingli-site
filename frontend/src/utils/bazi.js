@@ -306,7 +306,9 @@ export function calculateBazi({
     nextSolarTerm: (() => {
       try {
         const nj = Solar.fromDate(d).getLunar().getNextJieQi?.()
-        return nj?.getName?.() || nj?.toString?.() || ''
+        if (!nj) return ''
+        if (typeof nj === 'string') return nj
+        return nj.getName?.() || nj._p?.name || nj.toString?.() || ''
       } catch { return '' }
     })(),
     nextSolarTermDate: (() => {
@@ -321,22 +323,41 @@ export function calculateBazi({
 }
 
 // 查找日期所属节气（取 <= 该日期最近的节气）
+// 注：lunar-javascript 的 getJieQi() 仅在"当天正好是节气"时返回值，
+// 其余日期需逐天向前回溯，最多回退 17 天（两个节气相隔约 15.2 天）。
 export function getSolarTermOfDate(date) {
+  // Step 1: 把输入标准化为 {year, month, day} 三个整数，避免跨 context 的 Date/ Solar instanceof 失效
+  let y = 0, m = 0, day = 0
   try {
-    const lunar = Solar.fromDate(date).getLunar()
-    const currentJq = lunar.getJieQi?.()
-    if (currentJq) {
-      const name = currentJq.getName?.() || currentJq.toString?.() || ''
-      if (name) return name
+    if (date instanceof Date) {
+      y = date.getFullYear(); m = date.getMonth() + 1; day = date.getDate()
+    } else if (date && typeof date === 'object' && typeof date.getFullYear === 'function') {
+      y = date.getFullYear(); m = date.getMonth() + 1; day = date.getDate()
+    } else if (date && typeof date === 'object' && typeof date.getYear === 'function') {
+      // 鸭子类型：lunar-javascript Solar 对象
+      y = date.getYear(); m = date.getMonth(); day = date.getDay()
+    } else if (typeof date === 'number' || typeof date === 'string') {
+      const d = new Date(date)
+      y = d.getFullYear(); m = d.getMonth() + 1; day = d.getDate()
     }
-    // fallback：如果 getJieQi 未命中，遍历候选节气找到最近的
-    const d = date instanceof Date ? date : new Date(date)
-    const baseYear = d.getFullYear()
-    // 用 lunar-javascript 内置的 JieQi 工具近似
-    return ''
-  } catch (e) {
-    return ''
+  } catch (_) { y = 0 }
+  if (!y) return ''
+  let s
+  try { s = Solar.fromYmd(y, m, day) } catch (_) { return '' }
+  // Step 2: 向前回溯找最近的节气
+  for (let i = 0; i < 18; i++) {
+    let lunar
+    try { lunar = s.getLunar() } catch (_) { return '' }
+    const jq = lunar.getJieQi?.()
+    if (jq) {
+      if (typeof jq === 'string') return jq
+      if (jq.getName) return jq.getName()
+      if (jq._p && jq._p.name) return jq._p.name
+      return String(jq)
+    }
+    s = s.next(-1)
   }
+  return ''
 }
 
 function wangOf(dayGan, monthWX) {
