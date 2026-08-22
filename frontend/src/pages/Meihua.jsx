@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { meihuaByNumber, meihuaByTime, BAGUA_BY_ID, ZHI_INDEX, WX_CLASS, tiWangShuai, solarToLunarState } from '../utils/meihua.js'
+import { meihuaByNumber, meihuaByTime, meihuaByManual, meihuaByAuto, BAGUA_BY_ID, ZHI_INDEX, WX_CLASS, tiWangShuai, solarToLunarState } from '../utils/meihua.js'
+import { getHistory, saveHistory, deleteHistory } from '../utils/history.js'
 import api from '../utils/api.js'
 import { useAuthStore } from '../store/auth.js'
 import { Link, useNavigate } from 'react-router-dom'
@@ -8,6 +9,22 @@ const ZHI_OPTS = ['子','丑','寅','卯','辰','巳','午','未','申','酉','�
 const MONTH_WX = { 寅:'木',卯:'木',辰:'土',巳:'火',午:'火',未:'土',申:'金',酉:'金',戌:'土',亥:'水',子:'水',丑:'土' }
 const MONTH_NUM = { 寅:1,卯:2,辰:3,巳:4,午:5,未:6,申:7,酉:8,戌:9,亥:10,子:11,丑:12 }
 const ZHI_MONTH = Object.fromEntries(Object.entries(MONTH_NUM).map(([k,v])=>[v,k]))
+
+const MODES = [
+  { k:'time',  l:'🕒 时间起卦',  desc:'按占问时间自动换算' },
+  { k:'num2',  l:'🔢 数字起卦（两数）', desc:'上卦数+下卦数' },
+  { k:'num3',  l:'🔢 数字起卦（三数）', desc:'上卦+下卦+动爻' },
+  { k:'manual', l:'✋ 手动指定六爻',  desc:'自由选择爻象' },
+  { k:'auto',  l:'🎲 自动起卦',    desc:'系统随机成卦' },
+]
+
+const YAO_LABELS = ['初爻','二爻','三爻','四爻','五爻','上爻']
+const YAO_OPTS = [
+  { v:1, l:'少阳 ╋', desc:'阳爻，不变' },
+  { v:0, l:'少阴 ╴', desc:'阴爻，不变' },
+  { v:3, l:'老阳 ●', desc:'阳动，变阴' },
+  { v:2, l:'老阴 ●', desc:'阴动，变阳' },
+]
 
 function Yao({ lines, movingLine }) {
   const arr = [...lines].reverse()
@@ -88,11 +105,50 @@ function Collapsible({ title, children, defaultOpen = false }) {
   )
 }
 
+function MeihuaHistoryModal({ list, onClose, onLoad, onDelete }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-md w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="p-4 border-b border-ink-100 flex items-center justify-between">
+          <h3 className="font-bold text-[15px]">📜 梅花易数排盘记录</h3>
+          <button onClick={onClose} className="text-ink-400 text-xl">×</button>
+        </div>
+        <div className="flex-1 overflow-auto p-3 space-y-2">
+          {list.length === 0 && <div className="text-center text-ink-400 py-8 text-[13px]">暂无记录</div>}
+          {list.map(rec => (
+            <div key={rec.id} className="rounded-xl border border-ink-200 p-3 bg-ink-50/50">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[13px] font-bold text-ink-800">{rec.benName || '未知卦'}</span>
+                <span className="text-[10px] text-ink-400">{new Date(rec.savedAt).toLocaleString('zh-CN')}</span>
+              </div>
+              <div className="text-[11px] text-ink-500 mb-1.5">
+                {rec.question ? `占问：${rec.question}` : '无占问'}
+              </div>
+              <div className="flex items-center gap-1 flex-wrap mb-2">
+                <span className="tag wx-tu text-[10px]">互: {rec.huName || '-'}</span>
+                <span className="tag wx-huo text-[10px]">变: {rec.bianName || '-'}</span>
+                <span className="tag text-[10px] bg-ink-100 text-ink-600">{rec.movingLine}爻动</span>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => onLoad(rec)} className="flex-1 py-1.5 rounded-lg bg-primary-700 text-white text-[12px]">加载</button>
+                <button onClick={() => onDelete(rec.id)} className="flex-1 py-1.5 rounded-lg bg-red-50 text-red-600 text-[12px] border border-red-200">删除</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Meihua() {
   const nav = useNavigate()
   const { user, refreshUser } = useAuthStore()
-  const [mode, setMode] = useState('num')
-  const [num, setNum] = useState({ up: 7, down: 3 })
+  const [mode, setMode] = useState('time')
+  const [num2, setNum2] = useState({ up: 7, down: 3 })
+  const [num3, setNum3] = useState({ up: 7, down: 3, dong: 4 })
+  const [manualLines, setManualLines] = useState([1, 1, 1, 1, 1, 1])
+  const [manualMoving, setManualMoving] = useState(0)
   const [solarDate, setSolarDate] = useState(() => {
     const d = new Date()
     const pad = n => String(n).padStart(2, '0')
@@ -104,23 +160,21 @@ export default function Meihua() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiErr, setAiErr] = useState('')
   const [showTimeDetail, setShowTimeDetail] = useState(false)
+  const [historyList, setHistoryList] = useState([])
+  const [showHistory, setShowHistory] = useState(false)
 
   const solarDateObj = useMemo(() => new Date(solarDate), [solarDate])
-
-  // 自动换算：公历 → 农历年支/月/日/时辰 + 节气月令
   const lunarState = useMemo(() => solarToLunarState(solarDateObj), [solarDateObj])
   const monthZhi = lunarState.monthZhi
 
-  // 数字起卦动爻自动推算
-  const numCalc = useMemo(() => {
-    const s = (+num.up || 0) + (+num.down || 0)
+  const num2Calc = useMemo(() => {
+    const s = (+num2.up || 0) + (+num2.down || 0)
     const dong = s > 0 ? ((s - 1) % 6) + 1 : 0
-    const shangGuaId = s > 0 ? (((+num.up - 1) % 8) + 1) : 0
-    const xiaGuaId = s > 0 ? (((+num.down - 1) % 8) + 1) : 0
+    const shangGuaId = s > 0 ? (((+num2.up - 1) % 8) + 1) : 0
+    const xiaGuaId = s > 0 ? (((+num2.down - 1) % 8) + 1) : 0
     return { s, dong, shangGuaId, xiaGuaId }
-  }, [num.up, num.down])
+  }, [num2.up, num2.down])
 
-  // 时间起卦自动推算细节
   const timeDetail = useMemo(() => {
     if (!lunarState) return null
     const zhiIdx = ZHI_INDEX[lunarState.yearZhi] || 1
@@ -132,16 +186,43 @@ export default function Meihua() {
     return { zhiIdx, shangSum, shangGuaId, xiaSum, xiaGuaId, dong }
   }, [lunarState])
 
+  function openHistory() {
+    setHistoryList(getHistory('meihua'))
+    setShowHistory(true)
+  }
+
+  function loadFromHistory(rec) {
+    setMode(rec.mode === 'number' ? 'num2' : rec.mode === 'time' ? 'time' : rec.mode === 'manual' ? 'manual' : rec.mode === 'auto' ? 'auto' : 'time')
+    if (rec.question) setQuestion(rec.question)
+    setResult(null)
+    setShowHistory(false)
+    alert('已加载历史记录，请重新起卦查看')
+  }
+
+  function onDeleteHistory(id) {
+    deleteHistory(id, 'meihua')
+    setHistoryList(getHistory('meihua'))
+  }
+
   function onCalc() {
     setAiContent(''); setAiErr('')
     try {
       let r
-      if (mode === 'num') {
-        if (!num.up || !num.down) return alert('请填上、下卦数')
-        r = meihuaByNumber(+num.up, +num.down, +num.up + +num.down)
-      } else {
+      if (mode === 'time') {
         const ls = solarToLunarState(solarDateObj)
         r = meihuaByTime(ZHI_INDEX[ls.yearZhi], +ls.month, +ls.day, ZHI_INDEX[ls.timeZhi])
+      } else if (mode === 'num2') {
+        if (!num2.up || !num2.down) return alert('请填上、下卦数')
+        r = meihuaByNumber(+num2.up, +num2.down, +num2.up + +num2.down)
+      } else if (mode === 'num3') {
+        if (!num3.up || !num3.down || !num3.dong) return alert('请填写三个数字')
+        r = meihuaByNumber(+num3.up, +num3.down, +num3.dong)
+      } else if (mode === 'manual') {
+        // 检查是否已有动爻
+        const hasMove = manualLines.some(v => v === 2 || v === 3)
+        r = meihuaByManual(manualLines, manualMoving || (hasMove ? 0 : 1))
+      } else if (mode === 'auto') {
+        r = meihuaByAuto()
       }
       const mw = MONTH_WX[monthZhi] || '土'
       const ws = tiWangShuai(r.ti.wx, mw)
@@ -149,7 +230,9 @@ export default function Meihua() {
       r.monthZhi = monthZhi
       r.monthWX = mw
       r.question = question
+      r.mode = mode
       setResult({...r})
+      saveHistory(r, 'meihua')
     } catch (e) {
       alert('起卦失败：' + e.message)
     }
@@ -205,21 +288,34 @@ export default function Meihua() {
     }
   }
 
+  function handleManualYaoChange(idx, val) {
+    const next = [...manualLines]
+    next[idx] = val
+    setManualLines(next)
+    if (val === 2 || val === 3) {
+      setManualMoving(idx + 1)
+    }
+  }
+
   return (
     <div className="pb-4">
-      {/* 输入卡 */}
+      {showHistory && <MeihuaHistoryModal list={historyList} onClose={()=>setShowHistory(false)} onLoad={loadFromHistory} onDelete={onDeleteHistory} />}
+      
       <div className="paper-card p-4 mb-3">
-        <h2 className="font-song font-bold text-[17px] text-ink-900 mb-3 flex items-center gap-2">
-          <span className="seal text-xs">起卦</span> 梅花易数起卦
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-song font-bold text-[17px] text-ink-900 flex items-center gap-2">
+            <span className="seal text-xs">起卦</span> 梅花易数起卦
+          </h2>
+          <button onClick={openHistory} className="text-[12px] text-primary-700 flex items-center gap-1">
+            📜 排盘记录
+          </button>
+        </div>
 
-        {/* 占问事项 */}
         <label className="mb-3 block"><span className="field-label">所占何事（必填，AI 解读越详细越准）</span>
           <textarea rows={2} className="field" placeholder="例如：明日面试能否通过？此项目合作是否顺利？"
             value={question} onChange={e=>setQuestion(e.target.value)} />
         </label>
 
-        {/* 占问时间 - 自动读取系统时间换算 */}
         <div className="mb-3">
           <div className="flex items-center justify-between mb-1.5">
             <span className="field-label mb-0">占问时间</span>
@@ -233,64 +329,21 @@ export default function Meihua() {
           </div>
         </div>
 
-        {/* 起卦方式切换 */}
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          {[{k:'num',l:'🔢 数字起卦'},{k:'time',l:'🕒 时间起卦'}].map(o=>(
-            <button key={o.k} onClick={()=>{setMode(o.k); setResult(null); setAiContent(''); setAiErr('')}}
-              className={`py-2.5 rounded-lg font-medium text-[13px] border ${mode===o.k?'bg-primary-700 text-white border-primary-800':'bg-white text-ink-600 border-ink-200'}`}>
-              {o.l}
-            </button>
-          ))}
-        </div>
+        <label className="mb-2 block">
+          <span className="field-label mb-0">起卦方式</span>
+          <select className="field mt-1.5" value={mode} onChange={e=>{setMode(e.target.value); setResult(null); setAiContent(''); setAiErr('')}}>
+            {MODES.map(m => (
+              <option key={m.k} value={m.k}>{m.l} — {m.desc}</option>
+            ))}
+          </select>
+        </label>
 
-        {/* 数字起卦 */}
-        {mode === 'num' && (
-          <div className="space-y-3">
-            <label className="block"><span className="field-label">上卦数</span>
-              <input type="number" min="1" className="field" placeholder="任意正整数" value={num.up} onChange={e=>setNum({...num, up:e.target.value})} />
-            </label>
-            <label className="block"><span className="field-label">下卦数</span>
-              <input type="number" min="1" className="field" placeholder="任意正整数" value={num.down} onChange={e=>setNum({...num, down:e.target.value})} />
-            </label>
-
-            {/* 动爻自动推算结果 */}
-            <div className="rounded-xl border border-primary-200 bg-primary-50 px-3 py-2.5 text-[13px] text-ink-800 flex items-center justify-between">
-              <div>
-                <div className="text-primary-700 font-bold text-[13px]">📐 自动推算</div>
-                <div className="text-[11px] text-ink-500 mt-0.5">
-                  动爻为第 <b className="text-primary-700 text-[14px]">{numCalc.dong || '—'}</b> 爻
-                  <span className="text-ink-300 mx-1">·</span>
-                  上卦 <b>{numCalc.shangGuaId || '—'}</b>
-                  <span className="text-ink-300 mx-1">·</span>
-                  下卦 <b>{numCalc.xiaGuaId || '—'}</b>
-                </div>
-              </div>
-              <span className="tag wx-mu">自动</span>
-            </div>
-
-            {/* 规则说明 - 折叠 */}
-            <Collapsible title="📖 起卦规则说明">
-              <div className="space-y-1.5">
-                <p><b className="text-ink-800">梅花易数 · 数字起卦：</b></p>
-                <p>① 上卦 = 上卦数 mod 8，余 0 取 8（先天八卦序：1乾 2兑 3离 4震 5巽 6坎 7艮 8坤）</p>
-                <p>② 下卦 = 下卦数 mod 8，余 0 取 8</p>
-                <p>③ 动爻 = (上卦数 + 下卦数) mod 6，余 0 取 6</p>
-                <p>④ 动爻为下往上第 N 爻变化，阳变阴、阴变阳，得变卦</p>
-                <p className="text-ink-400 pt-1">示例：上7 下3 → 上卦7 mod 8 = 7 艮；下卦3 mod 8 = 3 离；动爻(7+3) mod 6 = 4 → 第4爻动</p>
-              </div>
-            </Collapsible>
-          </div>
-        )}
-
-        {/* 时间起卦 */}
         {mode === 'time' && (
           <div className="space-y-3">
             <label className="block"><span className="field-label">选择公历日期时间</span>
               <input type="datetime-local" step={60} className="field"
                 value={solarDate} onChange={e=>setSolarDate(e.target.value)} />
             </label>
-
-            {/* 自动换算摘要 */}
             <div className="rounded-xl border border-primary-200 bg-primary-50 px-3 py-2.5 text-[12px] text-ink-700">
               <div className="text-primary-700 font-bold mb-1">🔄 自动换算</div>
               <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px]">
@@ -300,8 +353,6 @@ export default function Meihua() {
                 <div>农历日：<b className="text-ink-800">{lunarState.day}</b></div>
               </div>
             </div>
-
-            {/* 起卦详情 - 折叠 */}
             <Collapsible title="📖 查看起卦详情">
               {timeDetail && (
                 <div className="space-y-1.5">
@@ -311,25 +362,157 @@ export default function Meihua() {
                     <div>农历月 {lunarState.month}，农历日 {lunarState.day}</div>
                     <div>时辰 {lunarState.timeZhi} = {ZHI_INDEX[lunarState.timeZhi]}</div>
                     <div className="text-primary-700 pt-0.5 border-t border-ink-100 mt-1 pt-1">
-                      上卦 = ({ZHI_INDEX[lunarState.yearZhi]} + {lunarState.month} + {lunarState.day}) mod 8
+                      上卦 = ({ZHI_INDEX[lunarState.yearZhi]} + {lunarState.month} + {lunarState.day}) mod 8 = <b>{timeDetail.shangGuaId}</b>
                     </div>
                     <div className="text-primary-700">
-                      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= {timeDetail.shangSum} mod 8 = <b>{timeDetail.shangGuaId}</b>
-                    </div>
-                    <div className="text-primary-700 pt-0.5 border-t border-ink-100 mt-1 pt-1">
-                      下卦 = ({timeDetail.shangSum} + {ZHI_INDEX[lunarState.timeZhi]}) mod 8
-                    </div>
-                    <div className="text-primary-700">
-                      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= {timeDetail.xiaSum} mod 8 = <b>{timeDetail.xiaGuaId}</b>
+                      下卦 = ({timeDetail.shangSum} + {ZHI_INDEX[lunarState.timeZhi]}) mod 8 = <b>{timeDetail.xiaGuaId}</b>
                     </div>
                     <div className="text-primary-700 pt-0.5 border-t border-ink-100 mt-1 pt-1">
                       动爻 = ({timeDetail.xiaSum}) mod 6 = <b>{timeDetail.dong}</b>
                     </div>
                   </div>
-                  <p className="text-ink-400 pt-1 text-[11px]">先天八卦序：1乾 2兑 3离 4震 5巽 6坎 7艮 8坤</p>
                 </div>
               )}
             </Collapsible>
+          </div>
+        )}
+
+        {mode === 'num2' && (
+          <div className="space-y-3">
+            <label className="block"><span className="field-label">上卦数</span>
+              <input type="number" min="1" className="field" placeholder="任意正整数" value={num2.up} onChange={e=>setNum2({...num2, up:e.target.value})} />
+            </label>
+            <label className="block"><span className="field-label">下卦数</span>
+              <input type="number" min="1" className="field" placeholder="任意正整数" value={num2.down} onChange={e=>setNum2({...num2, down:e.target.value})} />
+            </label>
+            <div className="rounded-xl border border-primary-200 bg-primary-50 px-3 py-2.5 text-[13px] text-ink-800 flex items-center justify-between">
+              <div>
+                <div className="text-primary-700 font-bold text-[13px]">📐 自动推算</div>
+                <div className="text-[11px] text-ink-500 mt-0.5">
+                  动爻为第 <b className="text-primary-700 text-[14px]">{num2Calc.dong || '—'}</b> 爻
+                  <span className="text-ink-300 mx-1">·</span>
+                  上卦 <b>{num2Calc.shangGuaId || '—'}</b>
+                  <span className="text-ink-300 mx-1">·</span>
+                  下卦 <b>{num2Calc.xiaGuaId || '—'}</b>
+                </div>
+              </div>
+              <span className="tag wx-mu">自动</span>
+            </div>
+            <Collapsible title="📖 起卦规则说明">
+              <div className="space-y-1.5">
+                <p><b className="text-ink-800">梅花易数 · 数字起卦（两数法）：</b></p>
+                <p>① 上卦 = 上卦数 mod 8，余 0 取 8</p>
+                <p>② 下卦 = 下卦数 mod 8，余 0 取 8</p>
+                <p>③ 动爻 = (上卦数 + 下卦数) mod 6，余 0 取 6</p>
+                <p className="text-ink-400">示例：上7 下3 → 上7艮；下3离；动爻(7+3)%6=4 → 第4爻动</p>
+              </div>
+            </Collapsible>
+          </div>
+        )}
+
+        {mode === 'num3' && (
+          <div className="space-y-3">
+            <label className="block"><span className="field-label">上卦数（第1数）</span>
+              <input type="number" min="1" className="field" placeholder="任意正整数" value={num3.up} onChange={e=>setNum3({...num3, up:e.target.value})} />
+            </label>
+            <label className="block"><span className="field-label">下卦数（第2数）</span>
+              <input type="number" min="1" className="field" placeholder="任意正整数" value={num3.down} onChange={e=>setNum3({...num3, down:e.target.value})} />
+            </label>
+            <label className="block"><span className="field-label">动爻数（第3数）</span>
+              <input type="number" min="1" className="field" placeholder="动爻 = 此数 mod 6" value={num3.dong} onChange={e=>setNum3({...num3, dong:e.target.value})} />
+            </label>
+            {(() => {
+              const upId = (+num3.up > 0) ? (((+num3.up - 1) % 8) + 1) : 0
+              const downId = (+num3.down > 0) ? (((+num3.down - 1) % 8) + 1) : 0
+              const dong = (+num3.dong > 0) ? (((+num3.dong - 1) % 6) + 1) : 0
+              return (
+                <div className="rounded-xl border border-primary-200 bg-primary-50 px-3 py-2.5 text-[13px] text-ink-800 flex items-center justify-between">
+                  <div>
+                    <div className="text-primary-700 font-bold text-[13px]">📐 推算结果</div>
+                    <div className="text-[11px] text-ink-500 mt-0.5">
+                      动爻为第 <b className="text-primary-700 text-[14px]">{dong || '—'}</b> 爻
+                      <span className="text-ink-300 mx-1">·</span>
+                      上卦 <b>{upId || '—'}</b>
+                      <span className="text-ink-300 mx-1">·</span>
+                      下卦 <b>{downId || '—'}</b>
+                    </div>
+                  </div>
+                  <span className="tag wx-huo">三数</span>
+                </div>
+              )
+            })()}
+            <Collapsible title="📖 起卦规则说明">
+              <div className="space-y-1.5">
+                <p><b className="text-ink-800">梅花易数 · 数字起卦（三数法）：</b></p>
+                <p>① 上卦 = 第1数 mod 8，余 0 取 8</p>
+                <p>② 下卦 = 第2数 mod 8，余 0 取 8</p>
+                <p>③ 动爻 = 第3数 mod 6，余 0 取 6</p>
+                <p className="text-ink-400">示例：7、3、5 → 上7艮；下3离；动5%6=5 → 第5爻动</p>
+              </div>
+            </Collapsible>
+          </div>
+        )}
+
+        {mode === 'manual' && (
+          <div className="space-y-3">
+            <div className="text-[12px] text-ink-600 bg-ink-50 rounded-lg p-2.5 border border-ink-100">
+              💡 选择六爻的阴阳属性。选"老阳/老阴"会自动标记为动爻；也可以手动指定动爻位置。
+            </div>
+            <div className="space-y-2">
+              {YAO_LABELS.map((label, idx) => (
+                <div key={idx} className="flex items-center gap-2 bg-white rounded-lg border border-ink-200 p-2.5">
+                  <div className="w-14 text-[12px] font-medium text-ink-700">{label}</div>
+                  <div className="flex-1 grid grid-cols-4 gap-1">
+                    {YAO_OPTS.map(opt => (
+                      <button key={opt.v} type="button"
+                        onClick={() => handleManualYaoChange(idx, opt.v)}
+                        className={`py-1.5 rounded text-[11px] font-medium transition ${
+                          manualLines[idx] === opt.v
+                            ? 'bg-primary-700 text-white'
+                            : 'bg-ink-50 text-ink-600 border border-ink-200'
+                        }`}
+                        title={opt.desc}>
+                        {opt.l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 bg-white rounded-lg border border-ink-200 p-2.5">
+              <div className="w-14 text-[12px] font-medium text-ink-700">动爻</div>
+              <div className="flex-1 grid grid-cols-6 gap-1">
+                {[1,2,3,4,5,6].map(n => (
+                  <button key={n} type="button"
+                    onClick={() => setManualMoving(manualMoving === n ? 0 : n)}
+                    className={`py-1.5 rounded text-[11px] font-medium transition ${
+                      manualMoving === n
+                        ? 'bg-red-600 text-white'
+                        : 'bg-ink-50 text-ink-600 border border-ink-200'
+                    }`}>
+                    {n}爻
+                  </button>
+                ))}
+              </div>
+            </div>
+            {manualMoving > 0 && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+                已指定第 {manualMoving} 爻为动爻
+              </div>
+            )}
+          </div>
+        )}
+
+        {mode === 'auto' && (
+          <div className="space-y-3">
+            <div className="text-center py-6 bg-ink-50 rounded-xl border border-ink-100">
+              <div className="text-4xl mb-2">🎲</div>
+              <div className="text-[14px] text-ink-700 font-medium">系统将为你随机起一卦</div>
+              <div className="text-[11px] text-ink-400 mt-1">点击下方"至诚起卦"按钮即可</div>
+            </div>
+            <div className="text-[12px] text-ink-500 bg-ink-50 rounded-lg p-2.5 border border-ink-100">
+              💡 随机起卦的上下卦和动爻由系统随机生成，模拟古人掷蓍草起卦的效果。
+            </div>
           </div>
         )}
 
@@ -338,7 +521,6 @@ export default function Meihua() {
       </div>
 
       {result && <>
-        {/* 卦象卡 */}
         <div className="paper-card p-3 mb-3">
           <div className="grid grid-cols-3 gap-2">
             <HexTile hex={{...result.ben, __movingLine: result.movingLine }} label="本卦" ti={result.ti} yong={result.yong} />
@@ -355,7 +537,6 @@ export default function Meihua() {
           </div>
         </div>
 
-        {/* 体用生克 */}
         <div className="paper-card p-4 mb-3">
           <div className="font-song font-bold text-[15px] text-ink-900 mb-3"><span className="tag wx-huo">体用生克 · 吉凶</span></div>
           <div className="grid grid-cols-3 gap-2 mb-3 text-center">
@@ -385,7 +566,6 @@ export default function Meihua() {
           </div>
         </div>
 
-        {/* 卦辞/爻辞 */}
         <div className="paper-card p-4 mb-3">
           <div className="font-song font-bold text-[15px] text-ink-900 mb-2"><span className="tag wx-tu">卦辞 · 爻辞 · 象传</span></div>
           <div className="space-y-2 text-[13px] leading-[1.85] text-ink-800">
@@ -412,7 +592,6 @@ export default function Meihua() {
           </div>
         </div>
 
-        {/* AI 解读 */}
         <div className="paper-card p-4 mb-3">
           <div className="flex items-center justify-between mb-3">
             <div className="font-song font-bold text-[15px] text-ink-900 flex items-center gap-2">

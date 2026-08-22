@@ -171,6 +171,43 @@ export function meihuaByNumber(up, down, dongNum) {
   return buildMeihua(upId, downId, moving, { source:'number', upNum:up, downNum:down, sumNum:sum })
 }
 
+// 手动指定六爻（lines: 6个元素，0=少阴, 1=少阳, 2=老阴(动), 3=老阳(动)）
+// lines[0]=初爻, lines[5]=上爻
+export function meihuaByManual(lines, forcedMovingLine) {
+  const cleanLines = lines.map(v => {
+    if (v === 2) return 0 // 老阴变爻
+    if (v === 3) return 1 // 老阳变爻
+    return v
+  })
+  const downLines = cleanLines.slice(0, 3)
+  const upLines = cleanLines.slice(3, 6)
+  const downId = BAGUA_BY_LINES[downLines.join('')]?.id
+  const upId = BAGUA_BY_LINES[upLines.join('')]?.id
+  if (!downId || !upId) throw new Error('六爻数据无效')
+  
+  // 确定动爻：优先使用强制指定，否则找老阴/老阳
+  let moving = forcedMovingLine || 0
+  if (!moving) {
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i] === 2 || lines[i] === 3) {
+        moving = i + 1
+        break
+      }
+    }
+  }
+  if (!moving) moving = 1 // 默认初爻
+  
+  return buildMeihua(upId, downId, moving, { source:'manual', lines, forcedMovingLine })
+}
+
+// 自动随机起卦
+export function meihuaByAuto() {
+  const upId = Math.floor(Math.random() * 8) + 1
+  const downId = Math.floor(Math.random() * 8) + 1
+  const moving = Math.floor(Math.random() * 6) + 1
+  return buildMeihua(upId, downId, moving, { source:'auto' })
+}
+
 // 时间起卦（年支+月+日 得上卦；再加时支得下卦；总除6得动爻）
 export function meihuaByTime(yearZhiNum, month, day, timeZhiNum) {
   const sum1 = yearZhiNum + month + day
