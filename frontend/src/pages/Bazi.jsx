@@ -295,7 +295,8 @@ export default function Bazi() {
             <span className="text-[15px] font-medium text-ink-800">选择性别</span>
             <div className="flex items-center gap-5">
               {[{v:0,l:'男'},{v:1,l:'女'}].map(o => (
-                <label key={o.v} className="inline-flex items-center gap-2 text-[14px] text-ink-700 cursor-pointer">
+                <label key={o.v} className="inline-flex items-center gap-2 text-[14px] text-ink-700 cursor-pointer select-none"
+                  onClick={() => setForm({...form, gender: o.v})}>
                   <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${+form.gender===o.v ? 'border-[#00b3a0]' : 'border-ink-300'}`}>
                     {+form.gender===o.v && <span className="w-2.5 h-2.5 rounded-full bg-[#00b3a0]" />}
                   </span>
