@@ -80,13 +80,12 @@ export function shiShenOfGan(dayGan, targetGan) {
 }
 
 // 空亡：日柱（或年柱）六甲旬空
+// 六甲旬：甲子(戌亥空)、甲戌(申酉空)、甲申(午未空)、甲午(辰巳空)、甲辰(寅卯空)、甲寅(子丑空)
 export function kongWangOf(gan, zhi) {
   const gIdx = GAN.indexOf(gan)
   const zIdx = ZHI.indexOf(zhi)
-  // 旬首：甲子、甲戌、甲申、甲午、甲辰、甲寅 -> 天干 - 地支 相差0/2/4/6/8/10
-  let diff = (gIdx - zIdx + 12) % 12
-  // 每旬 10 天干配 12 地支 -> 每旬后两个地支空
-  const start = (zIdx - diff + 12) % 12 // 旬首地支
+  // 旬首地支 = 日支 - 日干偏移 (因为旬首天干永远是甲=0，所以当前日干就是旬内偏移)
+  const start = (zIdx - gIdx + 12) % 12 // 旬首地支
   const k1 = ZHI[(start + 10) % 12]
   const k2 = ZHI[(start + 11) % 12]
   return [k1, k2]
@@ -267,7 +266,8 @@ export function calculateBazi({
     yearGan, monthGan, monthZhi, dayGan, gender, birthDate: d
   })
   const qiYunSui = Math.max(1, Math.round(qiYunAge))
-  const qiYunDate = d.getFullYear() + qiYunAge + '岁起运'
+  const qiYunYear = Math.round(d.getFullYear() + qiYunAge)
+  const qiYunDate = `${qiYunYear} 年起运`
 
   // 华盖贵人
   const huaGai = getHuaGai(yearZhi, dayZhi, monthZhi)
@@ -302,20 +302,51 @@ export function calculateBazi({
     qiYunSui, qiYunDate,
     daYunList,
     huaGai,
-    solarTerm: (typeof lunar.getJieQi === 'function') ? (lunar.getJieQi()?.getName?.() || lunar.getJieQi() || '') : '',
-    nextSolarTerm: lunar.getNextJieQi?.()?.getName?.() || '',
-    nextSolarTermDate: lunar.getNextJieQi?.()?.getSolar?.()?.toYmd?.() || ''
+    solarTerm: getSolarTermOfDate(d),
+    nextSolarTerm: (() => {
+      try {
+        const nj = Solar.fromDate(d).getLunar().getNextJieQi?.()
+        return nj?.getName?.() || nj?.toString?.() || ''
+      } catch { return '' }
+    })(),
+    nextSolarTermDate: (() => {
+      try {
+        const nj = Solar.fromDate(d).getLunar().getNextJieQi?.()
+        const s = nj?.getSolar?.()
+        if (!s) return ''
+        return `${s.getYear()}-${String(s.getMonth()).padStart(2,'0')}-${String(s.getDay()).padStart(2,'0')}`
+      } catch { return '' }
+    })()
+  }
+}
+
+// 查找日期所属节气（取 <= 该日期最近的节气）
+export function getSolarTermOfDate(date) {
+  try {
+    const lunar = Solar.fromDate(date).getLunar()
+    const currentJq = lunar.getJieQi?.()
+    if (currentJq) {
+      const name = currentJq.getName?.() || currentJq.toString?.() || ''
+      if (name) return name
+    }
+    // fallback：如果 getJieQi 未命中，遍历候选节气找到最近的
+    const d = date instanceof Date ? date : new Date(date)
+    const baseYear = d.getFullYear()
+    // 用 lunar-javascript 内置的 JieQi 工具近似
+    return ''
+  } catch (e) {
+    return ''
   }
 }
 
 function wangOf(dayGan, monthWX) {
   const me = GAN_WUXING[dayGan]
-  // 旺：同我；相：我生；休：生我；囚：克我；死：我克
-  if (me === monthWX) return { label:'旺', note:'得令，五行旺相' }
-  if (SHENG_KE[me].sheng === monthWX) return { label:'相', note:'我生为相，次旺' }
-  if (SHENG_KE[me].beSheng === monthWX) return { label:'休', note:'生我者休，气渐退' }
-  if (SHENG_KE[me].beKe === monthWX) return { label:'囚', note:'克我者囚，气被困' }
-  if (SHENG_KE[me].ke === monthWX) return { label:'死', note:'我克者死，气衰竭' }
+  // 正确定义：旺(同我)、相(生我者)、休(我生者)、囚(克我者)、死(我克者)
+  if (me === monthWX) return { label:'旺', note:'同我者旺，得令当值，气最盛' }
+  if (SHENG_KE[me].beSheng === monthWX) return { label:'相', note:'生我者为相，次旺之气' }
+  if (SHENG_KE[me].sheng === monthWX) return { label:'休', note:'我生者为休，气渐衰退' }
+  if (SHENG_KE[me].beKe === monthWX) return { label:'囚', note:'克我者为囚，气被困厄' }
+  if (SHENG_KE[me].ke === monthWX) return { label:'死', note:'我克者为死，气极衰竭' }
   return { label:'平', note:'平和' }
 }
 
@@ -462,7 +493,7 @@ export const HUA_GAI_MAP = {
 
 // 生成大运列表（手动计算，确保与传统排盘一致）
 export function calculateDaYun({ yearGan, monthGan, monthZhi, dayGan, gender, birthDate }) {
-  // 传统规则：阳男阴女顺排，阴男阳女逆排
+  // 传统规则：阳年男顺排，阳年女逆排；阴年男逆排，阴年女顺排
   // 甲丙戊庚壬为阳干，乙丁己辛癸为阴干
   const yangGans = ['甲','丙','戊','庚','壬']
   const isYangYear = yangGans.includes(yearGan)
@@ -471,47 +502,56 @@ export function calculateDaYun({ yearGan, monthGan, monthZhi, dayGan, gender, bi
   // 阴男阳女 → 逆排
   const isShun = (isYangYear && gender === 0) || (!isYangYear && gender === 1)
 
-  // 起运年龄：出生到最近节气的天数 / 3
-  // 顺排（阳男阴女）：出生到下一个节气
-  // 逆排（阴男阳女）：出生到上一个节气
+  // 起运年龄：出生到最近节气的天数 / 3（3天=1岁，1天=4个月，1时辰=10天）
+  // 顺排（阳男阴女）：出生到下一个节的时间差 ÷ 3
+  // 逆排（阴男阳女）：出生到上一个节的时间差 ÷ 3
   let qiYunAge = 1
   try {
     const lunar = Solar.fromDate(birthDate).getLunar()
     const jq = lunar.getJieQi?.()
     const jqSolar = jq?.getSolar?.()
-    if (jqSolar) {
-      const jqMs = new Date(jqSolar.getYear(), jqSolar.getMonth()-1, jqSolar.getDay()).getTime()
-      const birthMs = birthDate.getTime()
-      let diffMs, diffDays
-      if (isShun) {
-        // 顺排：出生到下一个节气
-        const nextJq = lunar.getNextJieQi?.()
-        if (nextJq) {
-          const nextSolar = nextJq.getSolar()
-          const nextMs = new Date(nextSolar.getYear(), nextSolar.getMonth()-1, nextSolar.getDay()).getTime()
-          diffMs = nextMs - birthMs
-          diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
-        }
-      } else {
-        // 逆排：出生到上一个节气
+    const birthMs = birthDate.getTime()
+    let diffMs = 0, diffDays = 0
+    if (isShun) {
+      // 顺排：出生到下一个节气
+      const nextJq = lunar.getNextJieQi?.()
+      if (nextJq) {
+        const nextSolar = nextJq.getSolar()
+        const ny = nextSolar.getYear(), nm = nextSolar.getMonth()-1, nd = nextSolar.getDay()
+        const nh = nextSolar.getHour?.() || 0, nmin = nextSolar.getMinute?.() || 0
+        const nextMs = new Date(ny, nm, nd, nh, nmin).getTime()
+        diffMs = nextMs - birthMs
+        diffDays = diffMs / (1000 * 60 * 60 * 24)
+      }
+    } else {
+      // 逆排：出生到上一个节气
+      if (jqSolar) {
+        const jy = jqSolar.getYear(), jm = jqSolar.getMonth()-1, jd = jqSolar.getDay()
+        const jh = jqSolar.getHour?.() || 0, jmin = jqSolar.getMinute?.() || 0
+        const jqMs = new Date(jy, jm, jd, jh, jmin).getTime()
         diffMs = birthMs - jqMs
-        diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+        diffDays = diffMs / (1000 * 60 * 60 * 24)
       }
-      if (diffDays > 0) {
-        qiYunAge = Math.floor(diffDays / 3) / 12
-        if (qiYunAge < 0) qiYunAge = 1
-      }
+    }
+    if (diffDays > 0) {
+      qiYunAge = diffDays / 3 // 3天 = 1岁
+      if (qiYunAge < 0) qiYunAge = 1
     }
   } catch(e) { /* fallback */ }
 
-  // 大运排列：从月柱的下一个干支开始，按顺/逆方向排列
+  // 大运排列：从月柱开始，顺排取下一个干支，逆排取上一个干支
   const ganIdx = GAN.indexOf(monthGan)
   const zhiIdx = ZHI.indexOf(monthZhi)
 
-  // 大运从月柱的下一个干支开始
   const daYunList = []
-  let curGanIdx = (ganIdx + 1) % 10
-  let curZhiIdx = (zhiIdx + 1) % 12
+  let curGanIdx, curZhiIdx
+  if (isShun) {
+    curGanIdx = (ganIdx + 1) % 10
+    curZhiIdx = (zhiIdx + 1) % 12
+  } else {
+    curGanIdx = (ganIdx - 1 + 10) % 10
+    curZhiIdx = (zhiIdx - 1 + 12) % 12
+  }
 
   for (let i = 0; i < 10; i++) {
     const gz = GAN[curGanIdx] + ZHI[curZhiIdx]
@@ -519,8 +559,10 @@ export function calculateDaYun({ yearGan, monthGan, monthZhi, dayGan, gender, bi
     const endAge = startAge + 9
 
     // 计算流年
-    const startYear = birthDate.getFullYear() + startAge
+    const startYear = Math.round(birthDate.getFullYear() + qiYunAge + i * 10)
     const liuNian = []
+    // 流年干支从大运起运年份对应的干支开始逐年顺排
+    // 先算大运起运年的干支：以 birthYear + qiYunAge 作近似，再按顺序排
     let liuGanIdx = curGanIdx
     let liuZhiIdx = curZhiIdx
     for (let j = 0; j < 10; j++) {

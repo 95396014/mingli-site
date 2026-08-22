@@ -99,6 +99,13 @@ export default function Bazi() {
   const now = new Date()
   const [historyList, setHistoryList] = useState(() => getHistory())
   const [showHistory, setShowHistory] = useState(false)
+
+  // 根据出生年份自动设定夏令时默认值：中国仅 1986-1991 年间实行过夏令时
+  function defaultDstByYear(y) {
+    const yr = Number(y) || now.getFullYear()
+    return (yr >= 1986 && yr <= 1991) ? 'auto' : 'off'
+  }
+
   const [form, setForm] = useState({
     calendar: 'solar',
     year: now.getFullYear(),
@@ -107,7 +114,7 @@ export default function Bazi() {
     hour: now.getHours(),
     minute: now.getMinutes(),
     lunarLeap: false,
-    dstSwitch: 'auto',
+    dstSwitch: defaultDstByYear(now.getFullYear()),
     trueSolar: true,
     zaoWanZi: false,
     lng: 120,
@@ -248,14 +255,23 @@ export default function Bazi() {
 
   function toggleOpt(key, exclusive) {
     if (exclusive) {
-      // 互斥单选逻辑：真太阳时、早晚子时、夏令时三个互斥
-      setForm({
-        ...form,
-        trueSolar: key === 'trueSolar',
-        zaoWanZi: key === 'zaoWanZi',
-        // 夏令时用 dstSwitch 控制，单选 true → 自动识别模式开启
-        dstSwitch: key === 'dst' ? 'auto' : 'off',
-      })
+      if (key === 'dst') {
+        // 夏令时三态循环：off → auto → on → off
+        setForm({
+          ...form,
+          trueSolar: false,
+          zaoWanZi: false,
+          dstSwitch: form.dstSwitch === 'off' ? 'auto' : (form.dstSwitch === 'auto' ? 'on' : 'off')
+        })
+      } else {
+        // 真太阳时、早晚子时：单选 true → 夏令时自动切回 off
+        setForm({
+          ...form,
+          trueSolar: key === 'trueSolar',
+          zaoWanZi: key === 'zaoWanZi',
+          dstSwitch: 'off',
+        })
+      }
     } else {
       setForm({ ...form, [key]: !form[key] })
     }
@@ -324,7 +340,15 @@ export default function Bazi() {
           <div id="bazi-time-inputs" className="pb-3 border-b border-ink-100">
             <div className="grid grid-cols-3 gap-2 pt-3">
               <label><span className="field-label">{form.calendar==='solar'?'公历年':'农历年'}</span>
-                <select className="field" value={form.year} onChange={e=>setForm({...form, year:+e.target.value})}>
+                <select className="field" value={form.year} onChange={e=>{
+                  const y = +e.target.value
+                  setForm(f => ({
+                    ...f,
+                    year: y,
+                    // 切换年份时：如果当前是自动模式（'auto'或'off'非手动on），随年份自动调整夏令时开关
+                    dstSwitch: (f.dstSwitch === 'on') ? 'on' : defaultDstByYear(y)
+                  }))
+                }}>
                   {YEAR_RANGE.map(y=><option key={y} value={y}>{y}</option>)}
                 </select>
               </label>
@@ -392,9 +416,14 @@ export default function Bazi() {
           <div className="flex items-center justify-between py-4 flex-wrap gap-3">
             <div className="flex items-center gap-4 flex-wrap">
               {[
-                { key:'trueSolar', label:'真太阳时', checked: form.trueSolar },
-                { key:'zaoWanZi', label:'早晚子时', checked: form.zaoWanZi },
-                { key:'dst', label:'夏令时', checked: form.dstSwitch !== 'off' },
+                { key:'trueSolar', label:'真太阳时', checked: form.trueSolar, modeText: form.trueSolar ? 'ON' : 'OFF' },
+                { key:'zaoWanZi', label:'早晚子时', checked: form.zaoWanZi, modeText: form.zaoWanZi ? 'ON' : 'OFF' },
+                {
+                  key:'dst',
+                  label:'夏令时',
+                  checked: form.dstSwitch !== 'off',
+                  modeText: form.dstSwitch === 'on' ? '强制' : (form.dstSwitch === 'auto' ? '自动' : 'OFF')
+                },
               ].map(opt => (
                 <label key={opt.key} className={`inline-flex items-center gap-2 text-[14px] cursor-pointer px-3 py-1.5 rounded-full border transition ${opt.checked ? 'bg-[#e6f8f5] border-[#00b3a0] text-[#00b3a0]' : 'bg-white border-ink-200 text-ink-600'}`}
                        onClick={()=>toggleOpt(opt.key, true)}>
@@ -403,7 +432,7 @@ export default function Bazi() {
                   </span>
                   <span className="font-medium">{opt.label}</span>
                   <span className={`text-[10px] font-bold ${opt.checked ? 'text-[#00b3a0]' : 'text-ink-400'}`}>
-                    {opt.checked ? 'ON' : 'OFF'}
+                    {opt.modeText}
                   </span>
                 </label>
               ))}
@@ -429,7 +458,10 @@ export default function Bazi() {
 
         {/* 排盘记录按钮 */}
         <button className="w-full py-4 mt-2 bg-[#f6f2ec] text-ink-700 text-[16px] font-bold tracking-wider border-t border-ink-100 hover:bg-ink-50 transition"
-          onClick={()=>setShowHistory(true)}>
+          onClick={()=>{
+            if (!user) { if (confirm('请先登录后查看排盘记录（记录已保存在本机，登录后可跨设备同步）')) nav('/login'); return }
+            setShowHistory(true)
+          }}>
           排 盘 记 录 {historyList.length > 0 && <span className="text-[#00b3a0] ml-1">({historyList.length})</span>}
         </button>
       </div>
@@ -545,9 +577,24 @@ export default function Bazi() {
           <div className="mt-4 p-3 rounded-xl bg-gradient-to-br from-amber-50 via-white to-primary-50 border border-amber-100">
             <div className="font-song font-bold text-primary-800 mb-1.5">日主旺衰判定 · 得令 · 得地 · 得助</div>
             <div className="grid grid-cols-3 gap-2 text-[12px] mb-2">
-              <div className="bg-white rounded-lg p-2 text-center shadow-sm"><div className="text-ink-400 text-[10px]">得令</div><div className="font-bold text-ink-800 text-[15px]">{result.deLingScore.toFixed(1)}</div></div>
-              <div className="bg-white rounded-lg p-2 text-center shadow-sm"><div className="text-ink-400 text-[10px]">得地</div><div className="font-bold text-ink-800 text-[15px]">{result.deDiScore.toFixed(1)}</div></div>
-              <div className="bg-white rounded-lg p-2 text-center shadow-sm"><div className="text-ink-400 text-[10px]">得助</div><div className="font-bold text-ink-800 text-[15px]">{result.deZhuScore.toFixed(1)}</div></div>
+              <div className="bg-white rounded-lg p-2 text-center shadow-sm">
+                <div className="text-ink-400 text-[10px]">得令（月令）</div>
+                <div className="font-bold text-ink-800 text-[15px]">{result.deLingScore.toFixed(1)}</div>
+                <div className="text-[9px] text-ink-400 mt-0.5 leading-snug">生我+2.0 / 同我+1.5<br/>我生-1.0 / 克我-2.0</div>
+              </div>
+              <div className="bg-white rounded-lg p-2 text-center shadow-sm">
+                <div className="text-ink-400 text-[10px]">得地（地支藏干）</div>
+                <div className="font-bold text-ink-800 text-[15px]">{result.deDiScore.toFixed(1)}</div>
+                <div className="text-[9px] text-ink-400 mt-0.5 leading-snug">同类 × 权重 全取<br/>生我 × 权重 × 60%</div>
+              </div>
+              <div className="bg-white rounded-lg p-2 text-center shadow-sm">
+                <div className="text-ink-400 text-[10px]">得助（天干同类）</div>
+                <div className="font-bold text-ink-800 text-[15px]">{result.deZhuScore.toFixed(1)}</div>
+                <div className="text-[9px] text-ink-400 mt-0.5 leading-snug">同类天干 +1.0 / 个<br/>生我天干 +0.5 / 个</div>
+              </div>
+            </div>
+            <div className="text-[11px] text-ink-500 mb-1.5 leading-relaxed bg-amber-50/60 rounded-lg px-2 py-1">
+              📌 打分规则：综合分 = 得令 + 得地 + 得助。高于4.5偏旺 / 高于2.5略旺 / 高于-1中和 / 高于-3略弱 / ≤-3偏弱。旺相休囚死定义为：<b>同我者旺、生我者相、我生者休、克我者囚、我克者死</b>。
             </div>
             <div className="text-[12px] text-ink-700 leading-relaxed">
               日主 <b className="text-primary-700">{result.dayGan}</b>（{GAN_WUXING[result.dayGan]}），生于 <b>{result.monthWX}</b> 月 → 月令「{result.wangStatus.label}」（{result.wangStatus.note}）；综合判定为「<b className="text-primary-700">{result.wangLevel}</b>」。
@@ -644,21 +691,35 @@ export default function Bazi() {
           <div className="space-y-2.5">
             {result.daYunList.map(dy => (
               <details key={dy.idx} className="rounded-xl border border-ink-200 overflow-hidden" open={dy.idx < 2}>
-                <summary className="px-3 py-2.5 bg-gradient-to-r from-ink-50 to-white cursor-pointer list-none flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <span className="tag wx-tu">第{dy.idx+1}运</span>
-                    <span className="font-song text-[22px] text-primary-700">{dy.ganzhi}</span>
-                    <span className="text-[11px] text-ink-500">{dy.startAge}-{dy.endAge}岁 · {dy.startYear}-{dy.endYear}</span>
+                <summary className="px-3 py-2.5 bg-gradient-to-r from-ink-50 to-white cursor-pointer list-none">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className="tag wx-tu">第{dy.idx+1}运</span>
+                      <div className="flex items-center gap-3 text-[12px] text-ink-500 shrink-0">
+                        <span>起运年龄：<b className="text-ink-700">{dy.startAge}-{dy.endAge}岁</b></span>
+                      </div>
+                    </div>
+                    <span className="text-ink-400 text-[12px] shrink-0 ml-2">▾</span>
                   </div>
-                  <span className="text-ink-400 text-[12px]">▾</span>
+                  <div className="grid grid-cols-2 gap-2 mt-1.5 text-[12px]">
+                    <div className="flex items-center gap-1.5 rounded-lg bg-[#fff9f3] px-2 py-1 border border-amber-100">
+                      <span className="text-ink-400 shrink-0">大运干支：</span>
+                      <span className="font-song text-[22px] text-primary-700 leading-none">{dy.ganzhi}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 rounded-lg bg-[#f3f9ff] px-2 py-1 border border-blue-100">
+                      <span className="text-ink-400 shrink-0">起运年份：</span>
+                      <span className="font-bold text-ink-800">{dy.startYear} 年 — {dy.endYear} 年</span>
+                    </div>
+                  </div>
                 </summary>
                 <div className="p-2.5 border-t border-ink-100 bg-white">
+                  <div className="text-[10px] text-ink-400 mb-1.5">流年（10年逐年 · 列：流年干支 / 公历年份 / 虚岁）</div>
                   <div className="grid grid-cols-5 gap-1.5">
                     {dy.liuNian.map(ln => (
                       <div key={ln.year} className="text-center rounded-md bg-ink-50 py-1.5">
-                        <div className="text-[10px] text-ink-400">{ln.age}岁</div>
+                        <div className="text-[10px] text-ink-400">{ln.year}年</div>
                         <div className="font-song font-bold text-ink-800 text-[12px] mt-0.5">{ln.ganzhi}</div>
-                        <div className="text-[10px] text-ink-400">{ln.year}</div>
+                        <div className="text-[10px] text-ink-400">{ln.age}岁</div>
                       </div>
                     ))}
                   </div>

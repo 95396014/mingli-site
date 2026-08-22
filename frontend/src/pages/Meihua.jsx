@@ -187,6 +187,7 @@ export default function Meihua() {
   }, [lunarState])
 
   function openHistory() {
+    if (!user) { if (confirm('请先登录后查看排盘记录（记录已保存在本机，登录后可跨设备同步）')) nav('/login'); return }
     setHistoryList(getHistory('meihua'))
     setShowHistory(true)
   }
