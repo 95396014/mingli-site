@@ -15,6 +15,7 @@ export function saveHistory(record, type = 'bazi') {
   try {
     const list = getHistory(type)
     if (type === 'meihua') {
+      // 保存完整 result 对象，以便历史记录可以完整还原卦象展示
       list.unshift({
         id: Date.now(),
         savedAt: new Date().toISOString(),
@@ -27,6 +28,8 @@ export function saveHistory(record, type = 'bazi') {
         monthWX: record.monthWX,
         luck: record.luck,
         mode: record.mode || '',
+        // 完整快照：用于直接还原排盘结果
+        snapshot: record,
       })
     } else {
       list.unshift({

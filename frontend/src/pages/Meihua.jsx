@@ -130,7 +130,7 @@ function MeihuaHistoryModal({ list, onClose, onLoad, onDelete }) {
                 <span className="tag text-[10px] bg-ink-100 text-ink-600">{rec.movingLine}爻动</span>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => onLoad(rec)} className="flex-1 py-1.5 rounded-lg bg-primary-700 text-white text-[12px]">加载</button>
+                <button onClick={() => onLoad(rec)} className="flex-1 py-1.5 rounded-lg bg-primary-700 text-white text-[12px]">查看此卦</button>
                 <button onClick={() => onDelete(rec.id)} className="flex-1 py-1.5 rounded-lg bg-red-50 text-red-600 text-[12px] border border-red-200">删除</button>
               </div>
             </div>
@@ -193,11 +193,18 @@ export default function Meihua() {
   }
 
   function loadFromHistory(rec) {
-    setMode(rec.mode === 'number' ? 'num2' : rec.mode === 'time' ? 'time' : rec.mode === 'manual' ? 'manual' : rec.mode === 'auto' ? 'auto' : 'time')
     if (rec.question) setQuestion(rec.question)
-    setResult(null)
+    if (rec.mode) setMode(rec.mode === 'number' ? 'num2' : rec.mode)
+    // 如果有完整快照，直接还原排盘结果
+    if (rec.snapshot) {
+      setResult(rec.snapshot)
+      setAiContent('')
+      setAiErr('')
+    } else {
+      // 兼容旧记录（无快照）
+      setResult(null)
+    }
     setShowHistory(false)
-    alert('已加载历史记录，请重新起卦查看')
   }
 
   function onDeleteHistory(id) {
