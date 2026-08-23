@@ -5,8 +5,19 @@ const router = express.Router()
 
 const FREE_LIMIT = parseInt(process.env.FREE_DAILY_LIMIT || '0')
 
-const SYSTEM_PROMPTS = {
-  bazi: `你是一位拥有30年实战经验的资深八字命理师，风格参考古籍《三命通会》《滴天髓》《穷通宝鉴》《子平真诠》，兼通现代格局派与旺衰派、盲派命理，能精准断八字。
+// 动态构建系统 prompt，注入当前真实时间信息
+function buildSystemPrompt(type, ctx /* { nowISO, currYear, currYr, next5, currDateCN, currMonth } */) {
+  const { nowISO, currYear, currYr, next5, currDateCN, currMonth } = ctx
+  if (type === 'bazi') {
+    return `你是一位拥有30年实战经验的资深八字命理师，风格参考古籍《三命通会》《滴天髓》《穷通宝鉴》《子平真诠》，兼通现代格局派与旺衰派、盲派命理，能精准断八字。
+
+## 时间基准（必须严格遵守，严禁写其他年份）
+- 解读时的真实当前日期：${currDateCN}（公历 ${nowISO.slice(0,10)}）
+- 当前公历年：${currYear} 年
+- 当前农历干支年：${currYr}
+- 用户口中的"今年"= ${currYear}（${currYr}）
+- "近5年"= ${next5}（共5年，每年都要具体展开）
+- "未来3-5年"= 从 ${currYear} 起算，而非其他年份
 
 ## 重要提示
 - 排盘数据中的 gender 字段表示性别（男/女），大运方向已按性别正确排盘
@@ -33,7 +44,7 @@ const SYSTEM_PROMPTS = {
   - **偏财运**：投资、理财、副业、偏财的机遇，哪些年份偏财旺
   - **求财方式**：适合的求财途径（工薪/投资/经商/技术/艺术等）
   - **破财风险**：哪些年份易破财、原因是什么、如何防范
-  - **财运高峰期**：指出未来3-5年财运最好的年份
+  - **财运高峰期**：指出未来3-5年财运最好的年份（以 ${currYear} 年为起点）
 - **感情婚姻**（需结合性别分析）：
   - 乾造（男）：正财为妻、偏财为情人/父亲，分析妻星旺衰、婚姻宫、感情走势
   - 坤造（女）：正官为夫、七杀为情人/压力，分析夫星旺衰、婚姻宫、感情走势
@@ -48,12 +59,12 @@ const SYSTEM_PROMPTS = {
   - 大运地支与原局地支的刑冲合害关系
   - 大运对用神、忌神的影响
   - 本步大运的核心吉凶特征，至少200字
-- **近5年逐年运势（2024-2028）**：
+- **近5年逐年运势（${next5}）**：
   - 每年的干支、与原局的关系
   - 该年在事业、财运、感情、健康方面的具体变化
   - 该年的关键事件和注意事项
   - 每年至少150字，合计至少750字
-- **关键转折点**：指出5年内最重要的转折年份和事件
+- **关键转折点**：指出从 ${currYear} 年起算 5 年内最重要的转折年份和事件
 
 ## 输出要求
 1. 所有判断必须有八字依据（指明是哪个天干/地支/藏干支撑该结论）
@@ -61,8 +72,18 @@ const SYSTEM_PROMPTS = {
 3. 严禁使用"仅供娱乐""仅供参考"等免责用语
 4. 使用 Markdown 格式，层级清晰，总字数 **1800-2800字**
 5. 大运流年部分必须详细具体，逐年分析，给出明确的吉凶判断
-6. **财运专题是核心重点**，必须详细展开，用具体年份和事件说明`,
-  meihua: `你是一位精通梅花易数的资深占卜师，传承邵雍邵康节一脉，旁参《周易》《易经》十翼，擅长以体用生克、旺相休囚、互变综错断事，断语精准，应期如神。
+6. **财运专题是核心重点**，必须详细展开，用具体年份和事件说明
+7. **严禁把当前公历年写成 ${currYear - 2} 或其他年份**，必须以 ${currYear} 年作为基准`
+  }
+
+  if (type === 'meihua') {
+    return `你是一位精通梅花易数的资深占卜师，传承邵雍邵康节一脉，旁参《周易》《易经》十翼，擅长以体用生克、旺相休囚、互变综错断事，断语精准，应期如神。
+
+## 时间基准（必须严格遵守）
+- 起卦/解读时的真实当前日期：${currDateCN}（公历 ${nowISO.slice(0,10)}）
+- 当前公历年：${currYear} 年
+- 当前农历干支年：${currYr}
+- 应期推算一律以公历 ${currYear} 年和 ${currMonth} 月为基准
 
 ## 分析框架（必须按此结构输出）
 
@@ -84,7 +105,7 @@ const SYSTEM_PROMPTS = {
 - **关键提示**：引用相关卦辞爻辞，做通俗易懂的白话释义
 
 ### 四、应期推算
-- **近应期**：近期（30天内）的应期，精确到日期或时段
+- **近应期**：近期（30天内，即 ${next5.slice(0,4)} 年内）的应期，精确到日期或时段
 - **远应期**：远期（3个月/半年/1年）的应期
 - **应期依据**：动爻数、变卦卦序、月令节气综合推算
 
@@ -100,6 +121,20 @@ const SYSTEM_PROMPTS = {
 3. 严禁使用"仅供娱乐""仅供参考"等免责用语
 4. 使用 Markdown 格式，层级清晰，总字数 **800-1500字**
 5. 针对所问事项给出具体可操作的建议，不要空泛`
+  }
+
+  return ''
+}
+
+// 公历年 → 干支年（简化版，按立春分割）
+function ganzhiYear(year /* number */, month /* 1-12 */, day /* 1-31 */) {
+  // 立春一般在 2/3 或 2/4；2/4 前算上一年
+  const lunarYear = (month < 2 || (month === 2 && day < 4)) ? year - 1 : year
+  const GAN = ['甲','乙','丙','丁','戊','己','庚','辛','壬','癸']
+  const ZHI = ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥']
+  const gi = ((lunarYear - 4) % 10 + 10) % 10
+  const zi = ((lunarYear - 4) % 12 + 12) % 12
+  return GAN[gi] + ZHI[zi]
 }
 
 function canUseAi(user) {
@@ -120,16 +155,35 @@ function canUseAi(user) {
 
 router.post('/interpret', async (req, res) => {
   const { type, payload, question } = req.body || {}
-  if (!SYSTEM_PROMPTS[type]) return res.status(400).json({ error: '未知类型' })
+  const validTypes = ['bazi', 'meihua']
+  if (!validTypes.includes(type)) return res.status(400).json({ error: '未知类型' })
   if (!payload) return res.status(400).json({ error: '缺少排盘数据' })
   const db = req.db
   const auth = canUseAi(req.user)
   if (!auth.ok) return res.status(402).json({ error: auth.reason })
 
+  // 构建时间上下文：始终使用服务器真实时间
+  const now = new Date()
+  const currYear = now.getFullYear()
+  const currMonth = now.getMonth() + 1
+  const currDay = now.getDate()
+  const nowISO = now.toISOString()
+  const currYr = ganzhiYear(currYear, currMonth, currDay)
+  const next5Arr = Array.from({length: 5}, (_, i) => currYear + i)
+  const next5 = `${next5Arr[0]}-${next5Arr[next5Arr.length - 1]}`
+  const currDateCN = `${currYear}年${currMonth}月${currDay}日（${currYr}年）`
+  const timeCtx = { nowISO, currYear, currYr, next5, currDateCN, currMonth }
+  const systemPrompt = buildSystemPrompt(type, timeCtx)
+
   const userPrompt =
 `【用户求问】${question || '请基于排盘信息综合解读'}
 【排盘数据（JSON）】
-${JSON.stringify(payload, null, 2)}`
+${JSON.stringify(payload, null, 2)}
+
+【重要时间锚点 - 必须以此为准】
+解读时的真实当前日期：${currDateCN}
+"今年"特指：${currYear} 年（${currYr}）
+近5年逐年分析范围：${next5}`
 
   const apiKey = process.env.DEEPSEEK_API_KEY
   const apiUrl = process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/chat/completions'
@@ -163,7 +217,7 @@ ${JSON.stringify(payload, null, 2)}`
       const { data } = await axios.post(apiUrl, {
         model,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPTS[type] },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
         temperature: 0.7,
@@ -213,15 +267,15 @@ ${JSON.stringify(payload, null, 2)}`
   }
 
   // 安全扣次和日志（包裹在 try-catch 中，防止数据库故障导致 502）
-  const now = Date.now()
+  const tsNow = Date.now()
   try {
     if (auth.type === 'free_trial') {
-      await db.prepare('UPDATE users SET free_daily_used = free_daily_used + 1, updated_at = ? WHERE id = ?').run(now, req.user.id)
+      await db.prepare('UPDATE users SET free_daily_used = free_daily_used + 1, updated_at = ? WHERE id = ?').run(tsNow, req.user.id)
     } else if (auth.type === 'vip' || auth.type === 'paid') {
-      await db.prepare('UPDATE users SET ai_credits = MAX(0, ai_credits - 1), updated_at = ? WHERE id = ?').run(now, req.user.id)
+      await db.prepare('UPDATE users SET ai_credits = MAX(0, ai_credits - 1), updated_at = ? WHERE id = ?').run(tsNow, req.user.id)
     }
     await db.prepare('INSERT INTO ai_logs (user_id,type,prompt,tokens_used,created_at) VALUES (?,?,?,?,?)')
-      .run(req.user.id, type, JSON.stringify({ question }).slice(0, 500), tokens, now)
+      .run(req.user.id, type, JSON.stringify({ question }).slice(0, 500), tokens, tsNow)
   } catch (dbErr) {
     console.error('[deepseek] 数据库操作失败（不影响返回内容）:', dbErr.message)
   }
