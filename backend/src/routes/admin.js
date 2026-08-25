@@ -159,7 +159,12 @@ router.get('/ai-logs', async (req, res) => {
   const off = (page - 1) * size
   const list = await db.prepare(`SELECT ai_logs.*, users.username FROM ai_logs LEFT JOIN users ON users.id = ai_logs.user_id ORDER BY ai_logs.id DESC LIMIT ? OFFSET ?`).all(+size, +off)
   const total = (await db.prepare('SELECT COUNT(*) AS c FROM ai_logs').get()).c
-  res.json({ list, total, page: +page, size: +size })
+  // PostgreSQL 的 pg 驱动会把 BIGINT 作为字符串返回，前端 dayjs 解析会出错
+  const normalized = list.map(l => ({
+    ...l,
+    created_at: l.created_at != null ? Number(l.created_at) : null
+  }))
+  res.json({ list: normalized, total, page: +page, size: +size })
 })
 
 module.exports = router

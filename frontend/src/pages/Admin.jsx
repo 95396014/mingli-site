@@ -303,6 +303,17 @@ export default function Admin() {
 
         {tab==='ai-logs' && (
           <div className="rounded-2xl bg-white border border-ink-200 p-4">
+            <div className="mb-3 flex flex-wrap gap-2 text-[12px]">
+              <span className="px-2.5 py-1 rounded bg-primary-50 text-primary-700 border border-primary-100">
+                总调用次数：<b>{logs.total}</b>
+              </span>
+              <span className="px-2.5 py-1 rounded bg-amber-50 text-amber-700 border border-amber-100">
+                涉及用户：<b>{new Set(logs.list.map(l=>l.user_id).filter(Boolean)).size}</b>（当前页）
+              </span>
+              <span className="px-2.5 py-1 rounded bg-ink-50 text-ink-600 border border-ink-100">
+                本页合计 Tokens：<b>{logs.list.reduce((s,l)=>s+(+l.tokens_used||0),0)}</b>
+              </span>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-[13px]">
                 <thead className="bg-ink-50">
