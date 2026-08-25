@@ -92,14 +92,22 @@ export default function Admin() {
       ai_credits: u.ai_credits || 0,
       is_admin: u.is_admin || 0,
       is_vip: u.is_vip || 0,
-      vip_expire_at: u.vip_expire_at || null,
+      // datetime-local 输入框需要 YYYY-MM-DDTHH:mm 格式
+      vip_expire_at: u.vip_expire_at ? dayjs(Number(u.vip_expire_at)).format('YYYY-MM-DDTHH:mm') : '',
       password: '',
     })
     setEditOpen(true)
   }
   async function onEdit() {
     try {
-      await api.post(`/admin/users/${editTarget.id}/update`, editForm)
+      const payload = { ...editForm }
+      // 把 datetime-local 字符串转回毫秒时间戳
+      if (payload.vip_expire_at) {
+        payload.vip_expire_at = new Date(payload.vip_expire_at).getTime()
+      } else {
+        payload.vip_expire_at = null
+      }
+      await api.post(`/admin/users/${editTarget.id}/update`, payload)
       alert('✅ 已更新')
       setEditOpen(false); load()
     } catch (e) { alert('❌ ' + (e.response?.data?.error || e.message)) }
@@ -393,9 +401,9 @@ export default function Admin() {
               <option value={0}>否</option><option value={1}>是</option>
             </select>
           </label>
-          <label className="col-span-1"><span className="field-label">VIP 到期时间戳 (ms，可选)</span>
-            <input type="number" className="field" value={editForm.vip_expire_at ?? ''} disabled={!+editForm.is_vip}
-              onChange={e=>setEditForm({...editForm, vip_expire_at:e.target.value?+e.target.value:null})} />
+          <label className="col-span-1"><span className="field-label">VIP 到期时间</span>
+            <input type="datetime-local" className="field" value={editForm.vip_expire_at ?? ''} disabled={!+editForm.is_vip}
+              onChange={e=>setEditForm({...editForm, vip_expire_at:e.target.value})} />
           </label>
           <label className="col-span-2"><span className="field-label">重置密码（留空则不改，≥6位）</span>
             <input type="text" className="field" value={editForm.password} onChange={e=>setEditForm({...editForm, password:e.target.value})} placeholder="如需要重置请输入新密码" />

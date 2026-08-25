@@ -47,6 +47,13 @@ function requireAdmin(req, res, next) {
 }
 function sanitizeUser(u) {
   const { password, ...rest } = u
+  // PostgreSQL 的 pg 驱动会把 BIGINT 作为字符串返回；前端需要 number 才能被 dayjs 正确解析
+  const bigintFields = ['vip_expire_at', 'created_at', 'updated_at', 'paid_at']
+  for (const k of bigintFields) {
+    if (rest[k] != null && typeof rest[k] === 'string') {
+      rest[k] = Number(rest[k])
+    }
+  }
   return rest
 }
 
