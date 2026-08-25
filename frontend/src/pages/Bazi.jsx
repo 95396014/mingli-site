@@ -105,6 +105,7 @@ export default function Bazi() {
   const [reverseForm, setReverseForm] = useState({ yearGZ:'', monthGZ:'', dayGZ:'', timeGZ:'', startYear:1900, endYear:2100 })
   const [reverseRes, setReverseRes] = useState([])
   const [reverseLoading, setReverseLoading] = useState(false)
+  const [reverseTruncated, setReverseTruncated] = useState(false)
 
   // 根据出生年份自动设定夏令时默认值：中国仅 1986-1991 年间实行过夏令时
   function defaultDstByYear(y) {
@@ -561,8 +562,9 @@ export default function Bazi() {
                   setReverseLoading(true)
                   // 用 setTimeout 让 UI 先渲染 loading 状态，避免大数据量阻塞
                   setTimeout(()=>{
-                    const res = reverseBaziSearch(reverseForm)
-                    setReverseRes(res)
+                    const { list, truncated } = reverseBaziSearch(reverseForm)
+                    setReverseRes(list)
+                    setReverseTruncated(truncated)
                     setReverseLoading(false)
                   }, 50)
                 }}>
@@ -572,6 +574,7 @@ export default function Bazi() {
               {reverseRes.length > 0 && (
                 <div className="text-[12px] text-ink-500">
                   共找到 <b className="text-[#00b3a0]">{reverseRes.length}</b> 个可能日期
+                  {reverseTruncated && <span className="ml-2 text-amber-600">（结果过多，仅显示前 2000 条，请缩小年份范围）</span>}
                 </div>
               )}
 

@@ -676,16 +676,14 @@ export function getTimePillar(dayGan, timeZhi) {
  * @param {string} params.timeGZ   时柱（如'甲子'），空字符串表示通配
  * @param {number} params.startYear 起始年（默认 1900）
  * @param {number} params.endYear   结束年（默认 2100）
- * @param {boolean} params.everyDay 是否显示每一天（默认 false，只显示每个日柱首次出现的那天）
- * @returns {Array<{year,month,day,weekday,lunar,yearGZ,monthGZ,dayGZ,timeList:[{hour,zhi,ganzhi}]}>}
+ * @returns {{ list: Array<{year,month,day,weekday,lunar,yearGZ,monthGZ,dayGZ,timeList:[{hour,zhi,ganzhi}]}>, truncated: boolean }}
  */
 export function reverseBaziSearch({
   yearGZ = '', monthGZ = '', dayGZ = '', timeGZ = '',
-  startYear = 1900, endYear = 2100,
-  everyDay = false
+  startYear = 1900, endYear = 2100
 }) {
   const results = []
-  const seenDayGZ = new Set()
+  const MAX = 2000 // 结果过多时截断，避免弹窗卡顿
 
   for (let y = +startYear; y <= +endYear; y++) {
     for (let m = 1; m <= 12; m++) {
@@ -699,21 +697,19 @@ export function reverseBaziSearch({
         if (monthGZ && p.month !== monthGZ) continue
         if (dayGZ && p.day !== dayGZ) continue
 
-        // 如果未要求时柱，按 everyDay 控制是否收录
+        const solar = Solar.fromYmd(y, m, d)
+        const lunar = solar.getLunar()
+        const base = {
+          year: y, month: m, day: d,
+          weekday: ['日','一','二','三','四','五','六'][new Date(y, m - 1, d).getDay()],
+          lunar: `${lunar.getYearInChinese()}年${lunar.getMonthInChinese()}月${lunar.getDayInChinese()}`,
+          yearGZ: p.year, monthGZ: p.month, dayGZ: p.day,
+        }
+
+        // 如果未要求时柱，直接返回该日
         if (!timeGZ) {
-          if (!everyDay) {
-            if (seenDayGZ.has(`${p.year}-${p.month}-${p.day}`)) continue
-            seenDayGZ.add(`${p.year}-${p.month}-${p.day}`)
-          }
-          const solar = Solar.fromYmd(y, m, d)
-          const lunar = solar.getLunar()
-          results.push({
-            year: y, month: m, day: d,
-            weekday: ['日','一','二','三','四','五','六'][new Date(y, m - 1, d).getDay()],
-            lunar: `${lunar.getYearInChinese()}年${lunar.getMonthInChinese()}月${lunar.getDayInChinese()}`,
-            yearGZ: p.year, monthGZ: p.month, dayGZ: p.day,
-            timeList: []
-          })
+          results.push({ ...base, timeList: [] })
+          if (results.length >= MAX) return { list: results, truncated: true }
           continue
         }
 
@@ -732,24 +728,11 @@ export function reverseBaziSearch({
         }
         if (matchedTimes.length === 0) continue
 
-        if (!everyDay) {
-          const key = `${p.year}-${p.month}-${p.day}-${timeGZ}`
-          if (seenDayGZ.has(key)) continue
-          seenDayGZ.add(key)
-        }
-
-        const solar = Solar.fromYmd(y, m, d)
-        const lunar = solar.getLunar()
-        results.push({
-          year: y, month: m, day: d,
-          weekday: ['日','一','二','三','四','五','六'][new Date(y, m - 1, d).getDay()],
-          lunar: `${lunar.getYearInChinese()}年${lunar.getMonthInChinese()}月${lunar.getDayInChinese()}`,
-          yearGZ: p.year, monthGZ: p.month, dayGZ: p.day,
-          timeList: matchedTimes
-        })
+        results.push({ ...base, timeList: matchedTimes })
+        if (results.length >= MAX) return { list: results, truncated: true }
       }
     }
   }
 
-  return results
+  return { list: results, truncated: false }
 }
