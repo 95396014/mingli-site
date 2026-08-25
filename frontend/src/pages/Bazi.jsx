@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { calculateBazi, GAN_WUXING, ZHI_WUXING, CN_DST_RANGES, withinChinaDst } from '../utils/bazi.js'
+import { calculateBazi, GAN_WUXING, ZHI_WUXING, CN_DST_RANGES, withinChinaDst, JIA_ZI, reverseBaziSearch } from '../utils/bazi.js'
 import api from '../utils/api.js'
 import { useAuthStore } from '../store/auth.js'
 import { Link, useNavigate } from 'react-router-dom'
@@ -99,6 +99,12 @@ export default function Bazi() {
   const now = new Date()
   const [historyList, setHistoryList] = useState(() => getHistory())
   const [showHistory, setShowHistory] = useState(false)
+
+  // 四柱反查弹窗
+  const [showReverse, setShowReverse] = useState(false)
+  const [reverseForm, setReverseForm] = useState({ yearGZ:'', monthGZ:'', dayGZ:'', timeGZ:'', startYear:1900, endYear:2100 })
+  const [reverseRes, setReverseRes] = useState([])
+  const [reverseLoading, setReverseLoading] = useState(false)
 
   // 根据出生年份自动设定夏令时默认值：中国仅 1986-1991 年间实行过夏令时
   function defaultDstByYear(y) {
@@ -438,7 +444,7 @@ export default function Bazi() {
               ))}
             </div>
             <button type="button" className="px-4 py-1.5 rounded-md bg-[#00b3a0] text-white text-[13px] font-medium hover:bg-[#00a08f] transition"
-              onClick={()=>alert('四柱反查：根据八字反推出生时间，功能开发中')}>
+              onClick={()=>setShowReverse(true)}>
               四柱反查
             </button>
           </div>
@@ -505,6 +511,108 @@ export default function Bazi() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 四柱反查弹窗 */}
+      {showReverse && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={()=>setShowReverse(false)}>
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-ink-100">
+              <h3 className="font-bold text-[16px] text-ink-900">🔍 四柱反查</h3>
+              <button onClick={()=>setShowReverse(false)} className="text-[12px] text-ink-400 hover:text-ink-700 px-2">关闭</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="text-[12px] text-ink-500 leading-relaxed">
+                输入已知四柱（可留空表示通配），系统在 1900-2100 年间反推所有可能的公历出生日期。
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { k:'yearGZ', label:'年柱' },
+                  { k:'monthGZ', label:'月柱' },
+                  { k:'dayGZ', label:'日柱' },
+                  { k:'timeGZ', label:'时柱' },
+                ].map(item => (
+                  <label key={item.k} className="block">
+                    <span className="field-label text-[11px]">{item.label}</span>
+                    <select className="field text-[13px]"
+                      value={reverseForm[item.k]} onChange={e=>setReverseForm({...reverseForm, [item.k]:e.target.value})}>
+                      <option value="">— 不限 —</option>
+                      {JIA_ZI.map(gz => <option key={gz} value={gz}>{gz}</option>)}
+                    </select>
+                  </label>
+                ))}
+                <label className="block">
+                  <span className="field-label text-[11px]">起始年</span>
+                  <input type="number" className="field text-[13px]" value={reverseForm.startYear}
+                    onChange={e=>setReverseForm({...reverseForm, startYear:+e.target.value})} />
+                </label>
+                <label className="block">
+                  <span className="field-label text-[11px]">结束年</span>
+                  <input type="number" className="field text-[13px]" value={reverseForm.endYear}
+                    onChange={e=>setReverseForm({...reverseForm, endYear:+e.target.value})} />
+                </label>
+              </div>
+              <button className="w-full py-3 bg-gradient-to-r from-[#00b3a0] to-[#00c9b3] text-white text-[15px] font-bold rounded-lg"
+                disabled={reverseLoading}
+                onClick={()=>{
+                  setReverseLoading(true)
+                  // 用 setTimeout 让 UI 先渲染 loading 状态，避免大数据量阻塞
+                  setTimeout(()=>{
+                    const res = reverseBaziSearch(reverseForm)
+                    setReverseRes(res)
+                    setReverseLoading(false)
+                  }, 50)
+                }}>
+                {reverseLoading ? '搜索中…' : '开始反查'}
+              </button>
+
+              {reverseRes.length > 0 && (
+                <div className="text-[12px] text-ink-500">
+                  共找到 <b className="text-[#00b3a0]">{reverseRes.length}</b> 个可能日期
+                </div>
+              )}
+
+              <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                {reverseRes.map((r, idx) => (
+                  <div key={idx} className="p-3 rounded-xl bg-ink-50 border border-ink-100">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-bold text-[14px] text-ink-800">
+                        {r.year}-{String(r.month).padStart(2,'0')}-{String(r.day).padStart(2,'0')} 周{r.weekday}
+                      </span>
+                      <button className="text-[11px] px-2 py-1 rounded bg-[#00b3a0] text-white"
+                        onClick={()=>{
+                          setForm(f=>({...f, year:r.year, month:r.month, day:r.day, hour:r.timeList[0]?.zhi==='子'?23:0, minute:0}))
+                          setShowReverse(false)
+                        }}>
+                        载入
+                      </button>
+                    </div>
+                    <div className="text-[12px] text-ink-600 mb-1">农历：{r.lunar}</div>
+                    <div className="flex gap-2 mb-1.5">
+                      {['yearGZ','monthGZ','dayGZ'].map(k => (
+                        <span key={k} className="inline-flex items-center justify-center w-9 h-6 rounded bg-white text-[11px] font-bold text-ink-700 border border-ink-200">
+                          {r[k]}
+                        </span>
+                      ))}
+                    </div>
+                    {r.timeList.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {r.timeList.map(t => (
+                          <span key={t.zhi} className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[11px] border border-amber-100">
+                            {t.zhi}时 {t.ganzhi}（{t.hour}）
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {reverseRes.length === 0 && !reverseLoading && (
+                  <div className="text-center text-ink-400 py-8 text-[13px]">尚未搜索或没有找到匹配日期</div>
+                )}
+              </div>
             </div>
           </div>
         </div>

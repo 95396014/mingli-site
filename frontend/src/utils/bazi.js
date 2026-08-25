@@ -637,3 +637,119 @@ export function getHuaGai(yearZhi, dayZhi, monthZhi) {
   }
   return { exists: false, zhi: '', monthMatch: false, desc: '' }
 }
+
+// ===== 四柱反查：根据八字反推公历出生日期 =====
+export const JIA_ZI = Array.from({ length: 60 }, (_, i) => GAN[i % 10] + ZHI[i % 12])
+
+// 轻量四柱计算（仅取四柱，不计算大运/十神等），用于反查遍历
+export function getFourPillarsOfSolar(y, m, d) {
+  try {
+    const solar = Solar.fromYmd(+y, +m, +d)
+    const lunar = solar.getLunar()
+    const ec = lunar.getEightChar()
+    return {
+      year: ec.getYearGan() + ec.getYearZhi(),
+      month: ec.getMonthGan() + ec.getMonthZhi(),
+      day: ec.getDayGan() + ec.getDayZhi(),
+    }
+  } catch (e) {
+    return null
+  }
+}
+
+// 根据日干和时辰地支求时柱干支（五鼠遁）
+export function getTimePillar(dayGan, timeZhi) {
+  // 甲己日起甲子，乙庚日起丙子，丙辛日起戊子，丁壬日起庚子，戊癸日起壬子
+  const startGanMap = { 甲:'甲', 己:'甲', 乙:'丙', 庚:'丙', 丙:'戊', 辛:'戊', 丁:'庚', 壬:'庚', 戊:'壬', 癸:'壬' }
+  const zhiIdx = ZHI.indexOf(timeZhi)
+  const startGanIdx = GAN.indexOf(startGanMap[dayGan])
+  const gan = GAN[(startGanIdx + zhiIdx) % 10]
+  return gan + timeZhi
+}
+
+/**
+ * 四柱反查：在指定公历年份范围内搜索匹配给定四柱的日期
+ * @param {Object} params
+ * @param {string} params.yearGZ   年柱（如'甲辰'），空字符串表示通配
+ * @param {string} params.monthGZ  月柱（如'癸酉'），空字符串表示通配
+ * @param {string} params.dayGZ    日柱（如'己巳'），空字符串表示通配
+ * @param {string} params.timeGZ   时柱（如'甲子'），空字符串表示通配
+ * @param {number} params.startYear 起始年（默认 1900）
+ * @param {number} params.endYear   结束年（默认 2100）
+ * @param {boolean} params.everyDay 是否显示每一天（默认 false，只显示每个日柱首次出现的那天）
+ * @returns {Array<{year,month,day,weekday,lunar,yearGZ,monthGZ,dayGZ,timeList:[{hour,zhi,ganzhi}]}>}
+ */
+export function reverseBaziSearch({
+  yearGZ = '', monthGZ = '', dayGZ = '', timeGZ = '',
+  startYear = 1900, endYear = 2100,
+  everyDay = false
+}) {
+  const results = []
+  const seenDayGZ = new Set()
+
+  for (let y = +startYear; y <= +endYear; y++) {
+    for (let m = 1; m <= 12; m++) {
+      const daysInMonth = new Date(y, m, 0).getDate()
+      for (let d = 1; d <= daysInMonth; d++) {
+        const p = getFourPillarsOfSolar(y, m, d)
+        if (!p) continue
+
+        // 年/月/日柱匹配
+        if (yearGZ && p.year !== yearGZ) continue
+        if (monthGZ && p.month !== monthGZ) continue
+        if (dayGZ && p.day !== dayGZ) continue
+
+        // 如果未要求时柱，按 everyDay 控制是否收录
+        if (!timeGZ) {
+          if (!everyDay) {
+            if (seenDayGZ.has(`${p.year}-${p.month}-${p.day}`)) continue
+            seenDayGZ.add(`${p.year}-${p.month}-${p.day}`)
+          }
+          const solar = Solar.fromYmd(y, m, d)
+          const lunar = solar.getLunar()
+          results.push({
+            year: y, month: m, day: d,
+            weekday: ['日','一','二','三','四','五','六'][new Date(y, m - 1, d).getDay()],
+            lunar: `${lunar.getYearInChinese()}年${lunar.getMonthInChinese()}月${lunar.getDayInChinese()}`,
+            yearGZ: p.year, monthGZ: p.month, dayGZ: p.day,
+            timeList: []
+          })
+          continue
+        }
+
+        // 需要匹配时柱：枚举 12 个时辰
+        const dayGan = p.day[0]
+        const matchedTimes = []
+        for (let hi = 0; hi < 12; hi++) {
+          const zhi = ZHI[hi]
+          const gz = getTimePillar(dayGan, zhi)
+          if (gz === timeGZ) {
+            // 时辰对应的小时范围：子时 23-1，丑时 1-3，... 亥时 21-23
+            const startHour = (hi === 0) ? 23 : (hi * 2 - 1)
+            const endHour = (hi === 0) ? 1 : (hi * 2 + 1)
+            matchedTimes.push({ hour: `${String(startHour).padStart(2,'0')}:00-${String(endHour).padStart(2,'0')}:00`, zhi, ganzhi: gz })
+          }
+        }
+        if (matchedTimes.length === 0) continue
+
+        if (!everyDay) {
+          const key = `${p.year}-${p.month}-${p.day}-${timeGZ}`
+          if (seenDayGZ.has(key)) continue
+          seenDayGZ.add(key)
+        }
+
+        const solar = Solar.fromYmd(y, m, d)
+        const lunar = solar.getLunar()
+        results.push({
+          year: y, month: m, day: d,
+          weekday: ['日','一','二','三','四','五','六'][new Date(y, m - 1, d).getDay()],
+          lunar: `${lunar.getYearInChinese()}年${lunar.getMonthInChinese()}月${lunar.getDayInChinese()}`,
+          yearGZ: p.year, monthGZ: p.month, dayGZ: p.day,
+          timeList: matchedTimes
+        })
+      }
+    }
+  }
+
+  return results
+}
