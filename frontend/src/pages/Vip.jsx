@@ -11,8 +11,6 @@ export default function Vip() {
   const [payStatus, setPayStatus] = useState('')
   const [loading, setLoading] = useState(false)
   const [poll, setPoll] = useState(false)
-  const [payMethod, setPayMethod] = useState('alipay') // wxpay / alipay / demo
-
   useEffect(() => { (async () => { const {data} = await api.get('/vip/plans'); setPlans(data.plans) })() }, [])
 
   useEffect(() => {
@@ -34,15 +32,9 @@ export default function Vip() {
     setLoading(true)
     setOrder(null); setPayStatus('')
     try {
-      const { data } = await api.post('/vip/order/create', { planId: pick, method: payMethod })
+      const { data } = await api.post('/vip/order/create', { planId: pick })
       setOrder(data); setPoll(true)
-      if (data.payInfo?.method === 'alipay') {
-        setPayStatus('请用支付宝 App 扫描下方二维码完成支付（5 分钟内有效）')
-      } else if (data.payInfo?.method === 'wxpay') {
-        setPayStatus('请用微信扫描下方二维码完成支付（5分钟内有效）')
-      } else {
-        setPayStatus(data.payInfo?.tip || '支付中…')
-      }
+      setPayStatus('请用支付宝 App 扫描下方二维码完成支付（5 分钟内有效）')
     } catch (e) {
       alert(e.response?.data?.error || e.message)
     } finally {
@@ -132,28 +124,16 @@ export default function Vip() {
         ))}
       </div>
 
-      {/* 支付方式选择 */}
+      {/* 支付方式：仅支付宝当面付 */}
       <div className="paper-card p-3 mb-3">
         <div className="font-bold text-[14px] text-ink-900 mb-2">💳 支付方式</div>
-        <div className="grid grid-cols-3 gap-2">
-          <button onClick={()=>{setPayMethod('alipay'); cancelOrder()}}
-            className={`rounded-xl p-3 text-center border-2 transition ${payMethod==='alipay'?'border-blue-500 bg-blue-50':'border-ink-200 bg-white'}`}>
-            <div className="text-[20px]">💙</div>
-            <div className="font-bold text-[13px] mt-1">支付宝当面付</div>
-            <div className="text-[10px] text-ink-500 mt-0.5">扫码即时到账</div>
-          </button>
-          <button onClick={()=>{setPayMethod('wxpay'); cancelOrder()}}
-            className={`rounded-xl p-3 text-center border-2 transition ${payMethod==='wxpay'?'border-green-500 bg-green-50':'border-ink-200 bg-white'}`}>
-            <div className="text-[20px]">💚</div>
-            <div className="font-bold text-[13px] mt-1">微信扫码支付</div>
-            <div className="text-[10px] text-ink-500 mt-0.5">Native 二维码</div>
-          </button>
-          <button onClick={()=>{setPayMethod('demo'); cancelOrder()}}
-            className={`rounded-xl p-3 text-center border-2 transition ${payMethod==='demo'?'border-primary-500 bg-primary-50':'border-ink-200 bg-white'}`}>
-            <div className="text-[20px]">⚡</div>
-            <div className="font-bold text-[13px] mt-1">演示支付</div>
-            <div className="text-[10px] text-ink-500 mt-0.5">5 秒自动到账</div>
-          </button>
+        <div className="flex items-center gap-3 rounded-xl p-3 border-2 border-blue-500 bg-blue-50">
+          <div className="text-[28px]">💙</div>
+          <div className="flex-1">
+            <div className="font-bold text-[14px]">支付宝当面付</div>
+            <div className="text-[11px] text-ink-500 mt-0.5">扫码即时到账 · 支持花呗</div>
+          </div>
+          <div className="text-[12px] text-blue-600 font-bold">已启用</div>
         </div>
       </div>
 
@@ -169,32 +149,22 @@ export default function Vip() {
           </div>
           <div className="text-[12px] text-ink-600 mb-2">{payStatus}</div>
 
-          {/* 扫码支付：微信 native / 支付宝当面付 */}
-          {(order.payInfo?.method === 'wxpay' || order.payInfo?.method === 'alipay') && (
-            (order.payInfo?.qr_code || order.payInfo?.qr_url) && (
-              <div className="mt-3 flex flex-col items-center">
-                <div className={`bg-white rounded-xl p-3 border-2 shadow-sm ${order.payInfo.method==='alipay'?'border-blue-200':'border-green-200'}`}>
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(order.payInfo.qr_code || order.payInfo.code_url || '')}`}
-                    alt="支付二维码"
-                    className="w-[200px] h-[200px]"
-                  />
-                </div>
-                <div className="text-[11px] text-ink-500 mt-2">
-                  {order.payInfo.method==='alipay' ? '📱 打开支付宝 App「扫一扫」付款' : '📱 打开微信「扫一扫」付款'}
-                </div>
-                <button onClick={cancelOrder} className="mt-3 text-[12px] text-ink-400 underline">
-                  取消订单 / 换其他方式
-                </button>
+          {/* 支付宝当面付二维码 */}
+          {order.payInfo?.qr_code && (
+            <div className="mt-3 flex flex-col items-center">
+              <div className="bg-white rounded-xl p-3 border-2 border-blue-200 shadow-sm">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(order.payInfo.qr_code)}`}
+                  alt="支付宝支付二维码"
+                  className="w-[200px] h-[200px]"
+                />
               </div>
-            )
-          )}
-
-          {/* 演示模式：显示倒计时 */}
-          {order.payInfo?.method === 'demo' && (
-            <div className="mt-2 text-center">
-              <div className="text-[11px] text-ink-500">⏳ {payStatus || '等待自动到账…'}</div>
-              {!poll && <button onClick={cancelOrder} className="mt-2 text-[12px] text-ink-400 underline">重新下单</button>}
+              <div className="text-[11px] text-ink-500 mt-2">
+                📱 打开支付宝 App「扫一扫」付款
+              </div>
+              <button onClick={cancelOrder} className="mt-3 text-[12px] text-ink-400 underline">
+                取消订单
+              </button>
             </div>
           )}
         </div>
