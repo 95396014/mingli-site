@@ -150,7 +150,14 @@ router.get('/orders', async (req, res) => {
     list = await db.prepare(`SELECT orders.*, users.username FROM orders LEFT JOIN users ON users.id = orders.user_id ORDER BY orders.id DESC LIMIT ? OFFSET ?`).all(+size, +off)
     total = (await db.prepare(`SELECT COUNT(*) AS c FROM orders`).get()).c
   }
-  res.json({ list, total, page: +page, size: +size })
+  // PostgreSQL pg 驱动把 BIGINT 返回成字符串，前端 dayjs 会解析错误（导致 1791 年），这里统一转 Number
+  const normalized = list.map(o => ({
+    ...o,
+    created_at: o.created_at != null ? Number(o.created_at) : null,
+    updated_at: o.updated_at != null ? Number(o.updated_at) : null,
+    paid_at:    o.paid_at    != null ? Number(o.paid_at)    : null,
+  }))
+  res.json({ list: normalized, total, page: +page, size: +size })
 })
 
 router.get('/ai-logs', async (req, res) => {

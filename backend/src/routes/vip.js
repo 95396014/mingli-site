@@ -73,14 +73,27 @@ router.post('/order/create', async (req, res) => {
 // 必须挂在 authMiddleware 之前（见 app.js 的公开支付回调路由）。
 
 router.get('/order/:no', async (req, res) => {
-  const order = await req.db.prepare('SELECT * FROM orders WHERE order_no = ? AND user_id = ?').get(req.params.no, req.user.id)
+  let order = await req.db.prepare('SELECT * FROM orders WHERE order_no = ? AND user_id = ?').get(req.params.no, req.user.id)
   if (!order) return res.status(404).json({ error: '订单不存在' })
+  order = {
+    ...order,
+    created_at: order.created_at != null ? Number(order.created_at) : null,
+    updated_at: order.updated_at != null ? Number(order.updated_at) : null,
+    paid_at:    order.paid_at    != null ? Number(order.paid_at)    : null,
+  }
   res.json({ order })
 })
 
 router.get('/orders', async (req, res) => {
   const list = await req.db.prepare('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 50').all(req.user.id)
-  res.json({ list })
+  // PostgreSQL/BigInt 兼容：把 BIGINT 列（可能被 pg 驱动返回成字符串）统一转 Number，避免前端 dayjs 解析出错
+  const normalized = list.map(o => ({
+    ...o,
+    created_at: o.created_at != null ? Number(o.created_at) : null,
+    updated_at: o.updated_at != null ? Number(o.updated_at) : null,
+    paid_at:    o.paid_at    != null ? Number(o.paid_at)    : null,
+  }))
+  res.json({ list: normalized })
 })
 
 module.exports = router

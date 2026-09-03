@@ -163,9 +163,23 @@ export default function Meihua() {
   const [historyList, setHistoryList] = useState([])
   const [showHistory, setShowHistory] = useState(false)
 
-  const solarDateObj = useMemo(() => new Date(solarDate), [solarDate])
-  const lunarState = useMemo(() => solarToLunarState(solarDateObj), [solarDateObj])
-  const monthZhi = lunarState.monthZhi
+  const solarDateObj = useMemo(() => {
+    // 兜底兼容：某些浏览器/时机 datetime-local 返回的字符串会让 new Date() 得到 Invalid Date
+    try {
+      const d = new Date(solarDate)
+      if (isNaN(d.getTime())) return new Date()
+      return d
+    } catch {
+      return new Date()
+    }
+  }, [solarDate])
+  const lunarState = useMemo(() => {
+    try { return solarToLunarState(solarDateObj) } catch (e) {
+      console.warn('[meihua] solarToLunarState 失败，fallback', e?.message)
+      return { year: solarDateObj.getFullYear(), yearZhi: '寅', month: 1, day: 1, timeZhi: '子', monthZhi: '寅' }
+    }
+  }, [solarDateObj])
+  const monthZhi = lunarState.monthZhi || '寅'
 
   const num2Calc = useMemo(() => {
     const s = (+num2.up || 0) + (+num2.down || 0)
@@ -297,9 +311,13 @@ export default function Meihua() {
   }
 
   function handleManualYaoChange(idx, val) {
-    const next = [...manualLines]
-    next[idx] = val
-    setManualLines(next)
+    // 必须用 functional update，避免 React 批处理/快速连点时用了陈旧的 manualLines 闭包
+    setManualLines(prev => {
+      const next = [...prev]
+      next[idx] = val
+      return next
+    })
+    // 老阴(2) / 老阳(3) 自动记为当前动爻；用户也可以之后在动爻栏再改
     if (val === 2 || val === 3) {
       setManualMoving(idx + 1)
     }

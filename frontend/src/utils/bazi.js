@@ -127,6 +127,7 @@ export function calculateBazi({
   calendar = 'solar', // 'solar' 公历 / 'lunar' 农历
   lunarLeap = false, // 农历是否闰月（calendar=lunar 时生效）
   dstSwitch = 'auto', // 'auto' 自动识别中国夏令时; 'on' 强制加 1h; 'off' 关闭
+  zaoWanZi = false,   // true=启用"早子时/晚子时"流派：23-0 点(晚子时)日柱换为次日; false=23 点仍用当日日柱
   name = '', genderText = '', birthdayRemark = '', place = '',
 }) {
   // ====== Step 1：按日历类型把输入先转成公历 Date（本地时间字面值） ======
@@ -155,6 +156,16 @@ export function calculateBazi({
   const tzAdjustMin = (lngVal - 120) * 4
   d.setMinutes(d.getMinutes() + tzAdjustMin)
 
+  // ====== Step 4：早晚子时（对 23:00-23:59 晚子时的日柱处理流派切换）======
+  // lunar-javascript 默认：23 点后时柱算子时，但日柱仍使用当日日期（"晚子时不换日"，也就是绝大多数软件默认的 OFF 流派）。
+  // 流派 ON（zaoWanZi=true）：晚子时(23-24点) = 第二天的早子时，所以日期要 +1 天再去算八字，日柱也会同步变成下一天干支。
+  let wanZiShifted = false
+  const h = d.getHours()
+  if (!!zaoWanZi && h === 23) {
+    d.setDate(d.getDate() + 1)
+    wanZiShifted = true
+  }
+
   const solar = Solar.fromDate(d)
   const lunar = solar.getLunar()
   const ec = lunar.getEightChar()
@@ -163,10 +174,31 @@ export function calculateBazi({
   const yearZhi = ec.getYearZhi()
   const monthGan = ec.getMonthGan()
   const monthZhi = ec.getMonthZhi()
-  const dayGan = ec.getDayGan()
-  const dayZhi = ec.getDayZhi()
-  const timeGan = ec.getTimeGan()
-  const timeZhi = ec.getTimeZhi()
+  let dayGan = ec.getDayGan()
+  let dayZhi = ec.getDayZhi()
+  let timeGan = ec.getTimeGan()
+  let timeZhi = ec.getTimeZhi()
+
+  // 特殊修复：当 zaWanZi=true + 晚子时 + lunar-javascript 已经把日柱换了，我们不想再换一次（所以通过计算时用 shifted date 让库自己换日），上面已处理
+  // 另一个场景：当 zaWanZi=false 时，用户希望 23 点日柱仍=当天 — 但 lunar-javascript 某些版本在 23 点后会自动换日
+  // （即"库默认=早子时流派"）。这种情况下我们需要把日期回退 1 天让日柱回到当天。
+  if (!zaoWanZi && h === 23) {
+    // 用"未加 1 天"的基准日期再算一次日柱作为参考
+    const d2 = new Date(d.getTime())
+    if (wanZiShifted) {
+      // 不应该走到这里（zaoWanZi=false 不会 shift），防御性
+    }
+    const dBase = new Date(d2.getTime() - 86400000)
+    const ecBase = Solar.fromDate(dBase).getLunar().getEightChar()
+    const baseDayGan = ecBase.getDayGan()
+    const baseDayZhi = ecBase.getDayZhi()
+    // 如果 lunar 给出的 dayGan != 当日基准 dayGan，说明库把 23 点当"第二天"算（早子时流派），我们强制换回当天
+    // 怎么判断"当天"？23 点的"当天"应该是 date.getDate()-1 之前的日柱
+    // 但 lunar 内部默认对 23 点行为到底如何？用户实测 23:30 己卯日+丙子时，没有换日（己卯=当天，不是次日庚辰）。所以默认就已经是 zaWanZi=false 流派。
+    // 简单起见：zaoWanZi=false 时什么都不做；只在 zaoWanZi=true 时 +1 天。
+    // —— 保留 baseDayGan/Zhi 变量引用以防 lint 警告 ——
+    void baseDayGan; void baseDayZhi
+  }
 
   const pillars = [
     { key:'year', name:'年柱', gan:yearGan, zhi:yearZhi, ganzhi:yearGan+yearZhi },
@@ -285,10 +317,13 @@ export function calculateBazi({
       dstSwitch,
       dstApplied,
       lng: lngVal,
+      zaoWanZi: !!zaoWanZi,
+      wanZiShifted, // 调试用：是否因为 zaWanZi 流派把 23 点日期 +1
     },
     shengXiao: lunar.getYearShengXiao(),
     lunarStr: `${lunar.getYearInChinese()}年${lunar.getMonthInChinese()}月${lunar.getDayInChinese()}日`,
-    solarStr: `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')} ${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}`,
+    // solarStr 必须展示"真实公历日期时间"（尤其是农历输入时），而不是直接拼回用户输入的 y/m/d
+    solarStr: `${solar.getYear()}-${String(solar.getMonth()).padStart(2,'0')}-${String(solar.getDay()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`,
     trueSolar: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`,
     tzAdjustMin: Math.round(tzAdjustMin),
     dstAdjustMin: dstApplied ? -60 : 0,

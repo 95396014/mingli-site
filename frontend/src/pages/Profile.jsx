@@ -9,6 +9,10 @@ export default function Profile() {
   const { user, logout, refreshUser } = useAuthStore()
   const [quota, setQuota] = useState(null)
   const [orders, setOrders] = useState([])
+  const [editOpen, setEditOpen] = useState(false)
+  const [editForm, setEditForm] = useState({ nickname: '', phone: '', oldPassword: '', newPassword: '', confirmPassword: '' })
+  const [editLoading, setEditLoading] = useState(false)
+
   useEffect(() => { refreshUser() }, [])
   useEffect(() => {
     (async () => {
@@ -19,8 +23,90 @@ export default function Profile() {
     })()
   }, [])
 
+  function openEdit() {
+    setEditForm({
+      nickname: user.nickname || user.username || '',
+      phone: user.phone || '',
+      oldPassword: '', newPassword: '', confirmPassword: ''
+    })
+    setEditOpen(true)
+  }
+
+  async function submitEdit() {
+    setEditLoading(true)
+    try {
+      const body = {}
+      const nick = String(editForm.nickname || '').trim()
+      if (nick !== (user.nickname || user.username || '')) body.nickname = nick
+      if ((editForm.phone || '') !== (user.phone || '')) body.phone = editForm.phone
+      if (editForm.newPassword) {
+        if (editForm.newPassword !== editForm.confirmPassword) {
+          alert('两次输入的新密码不一致')
+          return
+        }
+        if (!editForm.oldPassword) {
+          alert('修改密码必须输入原密码')
+          return
+        }
+        body.oldPassword = editForm.oldPassword
+        body.newPassword = editForm.newPassword
+      }
+      const { data } = await api.post('/auth/update-profile', body)
+      if (data.user) await refreshUser()
+      alert('✅ 资料已保存' + (editForm.newPassword ? '（密码已更新，下次登录生效）' : ''))
+      setEditOpen(false)
+    } catch (e) {
+      alert(e.response?.data?.error || e.message)
+    } finally { setEditLoading(false) }
+  }
+
   return (
     <div className="pb-4">
+      {/* 个人资料修改弹窗 */}
+      {editOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={()=>setEditOpen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[88vh] overflow-hidden flex flex-col shadow-2xl" onClick={e=>e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-ink-100 flex items-center justify-between">
+              <div className="font-bold font-song text-[16px] text-ink-900">✏️ 修改个人资料</div>
+              <button onClick={()=>setEditOpen(false)} className="text-ink-400 text-xl leading-none">×</button>
+            </div>
+            <div className="p-4 space-y-3 overflow-y-auto">
+              <label><span className="field-label">昵称</span>
+                <input className="field" maxLength={24} value={editForm.nickname}
+                  onChange={e=>setEditForm({...editForm, nickname:e.target.value})} placeholder="给自己取个名字"/>
+              </label>
+              <label><span className="field-label">手机号（必填）</span>
+                <input className="field" value={editForm.phone}
+                  onChange={e=>setEditForm({...editForm, phone:e.target.value})} placeholder="11 位手机号"/>
+              </label>
+              <div className="border-t border-dashed border-ink-200 pt-3">
+                <div className="text-[12px] text-ink-500 mb-2">🔒 修改密码（留空则不改）</div>
+                <label className="block mb-2"><span className="field-label">原密码</span>
+                  <input type="password" className="field" value={editForm.oldPassword}
+                    onChange={e=>setEditForm({...editForm, oldPassword:e.target.value})} placeholder="留空表示不改密码"/>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label><span className="field-label">新密码（≥6位）</span>
+                    <input type="password" className="field" value={editForm.newPassword}
+                      onChange={e=>setEditForm({...editForm, newPassword:e.target.value})}/>
+                  </label>
+                  <label><span className="field-label">确认新密码</span>
+                    <input type="password" className="field" value={editForm.confirmPassword}
+                      onChange={e=>setEditForm({...editForm, confirmPassword:e.target.value})}/>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div className="px-4 py-3 border-t border-ink-100 flex gap-2 justify-end">
+              <button className="btn-mo !py-2 !px-4 text-[13px]" onClick={()=>setEditOpen(false)} disabled={editLoading}>取消</button>
+              <button className="btn-zhusha !py-2 !px-4 text-[13px]" onClick={submitEdit} disabled={editLoading}>
+                {editLoading ? '保存中…' : '保存修改'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 个人卡 */}
       <div className="rounded-2xl p-5 mb-3 text-white relative overflow-hidden"
         style={{background:'linear-gradient(135deg,#4a2410 0%,#84381e 60%,#c55a1e 100%)'}}>
@@ -29,8 +115,12 @@ export default function Profile() {
             {(user.nickname || user.username).charAt(0)}
           </div>
           <div className="flex-1">
-            <div className="font-song font-bold text-[19px]">{user.nickname || user.username}</div>
+            <div className="flex items-center gap-2">
+              <div className="font-song font-bold text-[19px]">{user.nickname || user.username}</div>
+              <button onClick={openEdit} className="text-[10px] bg-white/15 hover:bg-white/25 border border-white/30 rounded-full px-2 py-0.5">✏️ 编辑</button>
+            </div>
             <div className="text-[12px] opacity-80 mt-0.5">@{user.username} · {user.is_admin?'超级管理员':(user.is_vip?'至尊会员':'普通用户')}</div>
+            {user.phone && <div className="text-[11px] opacity-75 mt-0.5">📱 {user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}</div>}
           </div>
           {user.is_vip && <div className="seal !bg-yellow-200/20 !border-yellow-200 !text-yellow-200">VIP</div>}
         </div>

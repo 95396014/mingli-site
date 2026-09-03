@@ -190,6 +190,7 @@ export default function Bazi() {
         calendar: form.calendar,
         lunarLeap: !!form.lunarLeap,
         dstSwitch: form.dstSwitch,
+        zaoWanZi: !!form.zaoWanZi,
         name: form.name,
         place: form.place,
       })
@@ -261,24 +262,23 @@ export default function Bazi() {
   }
 
   function toggleOpt(key, exclusive) {
-    if (exclusive) {
-      if (key === 'dst') {
-        // 夏令时三态循环：off → auto → on → off
-        setForm({
-          ...form,
-          trueSolar: false,
-          zaoWanZi: false,
-          dstSwitch: form.dstSwitch === 'off' ? 'auto' : (form.dstSwitch === 'auto' ? 'on' : 'off')
-        })
-      } else {
-        // 真太阳时、早晚子时：单选 true → 夏令时自动切回 off
-        setForm({
-          ...form,
-          trueSolar: key === 'trueSolar',
-          zaoWanZi: key === 'zaoWanZi',
-          dstSwitch: 'off',
-        })
-      }
+    if (key === 'dst') {
+      // 夏令时三态循环：off → auto → on → off
+      setForm({
+        ...form,
+        dstSwitch: form.dstSwitch === 'off' ? 'auto' : (form.dstSwitch === 'auto' ? 'on' : 'off')
+      })
+    } else if (exclusive) {
+      // 真太阳时、早晚子时：这两个是二元开关，普通 toggle
+      // 旧代码错误地把 trueSolar/zaoWanZi 当作互斥单选（一次只能开一个），
+      // 导致点"真太阳时 OFF"时先被设 false，紧接着又在单选分支里强制设成 true。
+      // 正确行为：彼此独立 toggle
+      setForm({
+        ...form,
+        [key]: !form[key],
+        // 开关非夏令时就把强制夏令时关掉（auto/on 会加/减 1h 影响排盘，但不影响真太阳时和早晚子时并存）
+        dstSwitch: key === 'dst' ? form.dstSwitch : form.dstSwitch
+      })
     } else {
       setForm({ ...form, [key]: !form[key] })
     }

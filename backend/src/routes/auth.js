@@ -41,4 +41,50 @@ router.get('/me', authMiddleware, (req, res) => {
   res.json({ user: sanitizeUser(req.user) })
 })
 
+/**
+ * 当前登录用户修改自己的资料：昵称、手机号、密码（密码需要验证旧密码）
+ */
+router.post('/update-profile', authMiddleware, async (req, res) => {
+  const db = req.db
+  const { nickname, phone, oldPassword, newPassword } = req.body || {}
+  const id = req.user.id
+  const now = Date.now()
+  const fields = []
+  const args = []
+
+  if (typeof nickname !== 'undefined') {
+    const nick = String(nickname || '').trim() || req.user.username
+    if (nick.length > 24) return res.status(400).json({ error: '昵称最长 24 字' })
+    fields.push('nickname=?'); args.push(nick)
+  }
+
+  if (typeof phone !== 'undefined' && phone !== null) {
+    const p = String(phone || '').trim()
+    if (!p) return res.status(400).json({ error: '手机号不能为空' })
+    if (!/^1[3-9]\d{9}$/.test(p)) return res.status(400).json({ error: '手机号格式不正确（应为 11 位 1 开头）' })
+    // 手机号唯一性：排除自己
+    const dup = await db.prepare('SELECT id FROM users WHERE phone = ? AND id <> ?').get(p, id)
+    if (dup) return res.status(400).json({ error: '该手机号已被其他账号使用' })
+    fields.push('phone=?'); args.push(p)
+  }
+
+  if (typeof newPassword !== 'undefined' && newPassword !== '') {
+    if (newPassword.length < 6) return res.status(400).json({ error: '新密码至少 6 位' })
+    // 验证旧密码
+    const u = await db.prepare('SELECT password FROM users WHERE id = ?').get(id)
+    if (!u || !bcrypt.compareSync(oldPassword || '', u.password || '')) {
+      return res.status(400).json({ error: '原密码错误' })
+    }
+    fields.push('password=?'); args.push(bcrypt.hashSync(newPassword, 10))
+  }
+
+  if (!fields.length) return res.json({ ok: true, user: sanitizeUser(req.user), updated: 0 })
+
+  fields.push('updated_at=?'); args.push(now, id)
+  await db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...args)
+
+  const updated = await db.prepare('SELECT * FROM users WHERE id = ?').get(id)
+  res.json({ ok: true, user: sanitizeUser(updated), updated: 1 })
+})
+
 module.exports = router
