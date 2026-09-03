@@ -37,20 +37,38 @@ export default function Profile() {
         {quota && (
           <div className="grid grid-cols-3 gap-2 mt-4">
             <div className="bg-white/10 backdrop-blur rounded-xl p-2.5 text-center border border-white/20">
-              <div className="text-[10px] opacity-80">账户状态</div>
-              <div className="font-bold text-[14px] mt-1">{quota.isVip||quota.isAdmin ? 'VIP' : '普通'}</div>
+              <div className="text-[10px] opacity-80">会员到期</div>
+              <div className="font-bold text-[12px] mt-1 leading-tight">
+                {(quota.isVip||quota.isAdmin)
+                  ? (quota.isAdmin ? '永久' : (quota.vipExpireAt ? dayjs(quota.vipExpireAt).format('YYYY-MM-DD') : '—'))
+                  : '未开通'}
+              </div>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-xl p-2.5 text-center border border-white/20">
-              <div className="text-[10px] opacity-80">AI 额度</div>
-              <div className="font-bold text-[18px]">{user.ai_credits||0}</div>
+              <div className="text-[10px] opacity-80">今日剩余</div>
+              <div className="font-bold text-[18px]">
+                {(quota.isVip||quota.isAdmin) ? `${quota.dailyRemain}/${quota.dailyLimit}` : '—'}
+              </div>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-xl p-2.5 text-center border border-white/20">
-              <div className="text-[10px] opacity-80">会员</div>
-              <div className="font-bold text-[18px]">{quota.isVip||quota.isAdmin ? '✓' : '—'}</div>
+              <div className="text-[10px] opacity-80">单次额度</div>
+              <div className="font-bold text-[18px]">{quota.aiCredits||0}</div>
             </div>
           </div>
         )}
       </div>
+
+      {/* 去充值入口 */}
+      {!user.is_admin && (
+        <Link to="/vip" className="block paper-card p-3 mb-3 flex items-center justify-between active:scale-[0.98] transition"
+          style={{background:'linear-gradient(90deg,rgba(218,165,32,0.12),rgba(139,69,19,0.08))'}}>
+          <div>
+            <div className="font-song font-bold text-[14px] text-primary-700">✦ 开通会员 / 购买单次额度</div>
+            <div className="text-[11px] text-ink-500 mt-0.5">7天 ¥166 · 月会员 ¥600 · 年会员 ¥5200 · 单次 ¥36</div>
+          </div>
+          <div className="bg-primary-700 text-white font-bold text-[12px] px-3 py-2 rounded-full whitespace-nowrap">去充值 →</div>
+        </Link>
+      )}
 
       {/* 操作 */}
       <div className="paper-card p-2 mb-3 grid grid-cols-2 gap-2">

@@ -6,6 +6,7 @@ import Meihua from './pages/Meihua.jsx'
 import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
 import Profile from './pages/Profile.jsx'
+import Vip from './pages/Vip.jsx'
 import Admin from './pages/Admin.jsx'
 import { useAuthStore } from './store/auth.js'
 
@@ -73,6 +74,7 @@ export default function App() {
       <Route path="/login" element={<Layout><Login /></Layout>} />
       <Route path="/register" element={<Layout><Register /></Layout>} />
       <Route path="/profile" element={<Layout><RequireAuth><Profile /></RequireAuth></Layout>} />
+      <Route path="/vip" element={<Layout><RequireAuth><Vip /></RequireAuth></Layout>} />
       <Route path="/admin" element={<RequireAuth requireAdmin><Admin /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

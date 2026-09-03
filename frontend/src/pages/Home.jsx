@@ -37,6 +37,28 @@ export default function Home() {
         ))}
       </div>
 
+      {/* 购买会员 / 额度入口 */}
+      <Link to={user ? '/vip' : '/login'}
+        className="block rounded-2xl p-4 mb-3 text-white relative overflow-hidden shadow-md active:scale-[0.98] transition"
+        style={{background:'linear-gradient(135deg,#8B4513 0%,#D2691E 40%,#DAA520 100%)'}}>
+        <div className="absolute right-2 top-0 opacity-20 text-[120px] leading-none font-song select-none -mr-1 -mt-3">✦</div>
+        <div className="flex items-center justify-between relative">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="seal !text-white !border-white/70 !bg-white/10">VIP</span>
+              <div className="font-song font-bold text-[18px]">开通会员 · 单次额度</div>
+            </div>
+            <div className="text-[12px] mt-1.5 opacity-90 leading-relaxed">
+              7天 ¥166 · 月会员 ¥600 · 年会员 ¥5200 · 单次额度 ¥36<br/>
+              <span className="opacity-80">会员每天 3 次 AI 深度解读，单次额度永久有效</span>
+            </div>
+          </div>
+          <div className="bg-white text-primary-800 font-bold text-[13px] px-4 py-2 rounded-full whitespace-nowrap shadow">
+            {user ? '立即购买 →' : '登录购买 →'}
+          </div>
+        </div>
+      </Link>
+
       {/* 知识卡 */}
       <div className="paper-card p-4">
         <div className="flex items-center justify-between mb-2">
