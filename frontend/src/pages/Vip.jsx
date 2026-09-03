@@ -11,7 +11,7 @@ export default function Vip() {
   const [payStatus, setPayStatus] = useState('')
   const [loading, setLoading] = useState(false)
   const [poll, setPoll] = useState(false)
-  const [payMethod, setPayMethod] = useState('wxpay') // wxpay / demo
+  const [payMethod, setPayMethod] = useState('alipay') // wxpay / alipay / demo
 
   useEffect(() => { (async () => { const {data} = await api.get('/vip/plans'); setPlans(data.plans) })() }, [])
 
@@ -36,7 +36,9 @@ export default function Vip() {
     try {
       const { data } = await api.post('/vip/order/create', { planId: pick, method: payMethod })
       setOrder(data); setPoll(true)
-      if (data.payInfo?.method === 'wxpay') {
+      if (data.payInfo?.method === 'alipay') {
+        setPayStatus('请用支付宝 App 扫描下方二维码完成支付（5 分钟内有效）')
+      } else if (data.payInfo?.method === 'wxpay') {
         setPayStatus('请用微信扫描下方二维码完成支付（5分钟内有效）')
       } else {
         setPayStatus(data.payInfo?.tip || '支付中…')
@@ -60,10 +62,10 @@ export default function Vip() {
         <div className="absolute right-0 top-0 opacity-20 text-[160px] leading-none font-song select-none -mr-2 -mt-4">✦</div>
         <div className="seal !text-white !border-white/70 !bg-white/10 mb-2">VIP</div>
         <div className="font-song font-bold text-[22px] leading-tight">问命阁 · 至尊会员</div>
-        <div className="text-[12px] mt-1.5 opacity-90">30+ 年实战命理师调教 Prompt · 海量 AI 解读额度随买随用</div>
+        <div className="text-[12px] mt-1.5 opacity-90">会员期内每天 3 次 AI 深度解读 · 也可购买单次额度单独扣减</div>
         <div className="grid grid-cols-3 gap-2 mt-4">
           {[
-            {t:'总额度',d:'月/季/年卡递增赠送'},
+            {t:'每日 3 次',d:'会员期内每天重置'},
             {t:'全功能',d:'八字 / 梅花 / 后续板块'},
             {t:'优先',d:'客服优先响应'}
           ].map(i=>(
@@ -81,18 +83,27 @@ export default function Vip() {
           <div>
             <div className="text-[11px] text-ink-500">当前身份</div>
             <div className="font-song font-bold text-[17px] text-ink-900 mt-0.5">
-              {user.is_vip || user.is_admin ? (
-                <span className="text-primary-700">✨ {user.is_admin?'超级管理员':'至尊会员'}</span>
+              {user.is_admin ? (
+                <span className="text-primary-700">✨ 超级管理员</span>
+              ) : (user.is_vip && user.vip_expire_at && user.vip_expire_at > Date.now()) ? (
+                <span className="text-primary-700">✨ 至尊会员</span>
               ) : '普通用户'}
             </div>
           </div>
           <div className="text-right">
-            {user.is_vip && user.vip_expire_at && (
-              <div className="text-[12px] text-ink-600">
-                到期：<b>{dayjs(user.vip_expire_at).format('YYYY-MM-DD')}</b>
-              </div>
+            {(user.is_vip && user.vip_expire_at && user.vip_expire_at > Date.now()) && (
+              <>
+                <div className="text-[12px] text-ink-600">
+                  到期：<b>{dayjs(user.vip_expire_at).format('YYYY-MM-DD')}</b>
+                </div>
+                <div className="text-[12px] text-ink-600 mt-1">
+                  今日会员额度：<b className="text-primary-700">{Math.max(0, 3 - (user.free_daily_used||0))}/3</b>
+                </div>
+              </>
             )}
-            <div className="text-[12px] text-ink-600 mt-1">AI 解读剩余额度：<b className="text-primary-700">{user.ai_credits||0}</b> 次</div>
+            <div className="text-[12px] text-ink-600 mt-1">
+              单次额度：<b className="text-primary-700">{user.ai_credits||0}</b> 次
+            </div>
           </div>
         </div>
       </div>
@@ -124,7 +135,13 @@ export default function Vip() {
       {/* 支付方式选择 */}
       <div className="paper-card p-3 mb-3">
         <div className="font-bold text-[14px] text-ink-900 mb-2">💳 支付方式</div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
+          <button onClick={()=>{setPayMethod('alipay'); cancelOrder()}}
+            className={`rounded-xl p-3 text-center border-2 transition ${payMethod==='alipay'?'border-blue-500 bg-blue-50':'border-ink-200 bg-white'}`}>
+            <div className="text-[20px]">💙</div>
+            <div className="font-bold text-[13px] mt-1">支付宝当面付</div>
+            <div className="text-[10px] text-ink-500 mt-0.5">扫码即时到账</div>
+          </button>
           <button onClick={()=>{setPayMethod('wxpay'); cancelOrder()}}
             className={`rounded-xl p-3 text-center border-2 transition ${payMethod==='wxpay'?'border-green-500 bg-green-50':'border-ink-200 bg-white'}`}>
             <div className="text-[20px]">💚</div>
@@ -152,17 +169,25 @@ export default function Vip() {
           </div>
           <div className="text-[12px] text-ink-600 mb-2">{payStatus}</div>
 
-          {/* 微信扫码：显示二维码 */}
-          {order.payInfo?.method === 'wxpay' && order.payInfo?.qr_url && (
-            <div className="mt-3 flex flex-col items-center">
-              <div className="bg-white rounded-xl p-3 border-2 border-green-200 shadow-sm">
-                <img src={order.payInfo.qr_url} alt="微信支付二维码" className="w-[200px] h-[200px]" />
+          {/* 扫码支付：微信 native / 支付宝当面付 */}
+          {(order.payInfo?.method === 'wxpay' || order.payInfo?.method === 'alipay') && (
+            (order.payInfo?.qr_code || order.payInfo?.qr_url) && (
+              <div className="mt-3 flex flex-col items-center">
+                <div className={`bg-white rounded-xl p-3 border-2 shadow-sm ${order.payInfo.method==='alipay'?'border-blue-200':'border-green-200'}`}>
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(order.payInfo.qr_code || order.payInfo.code_url || '')}`}
+                    alt="支付二维码"
+                    className="w-[200px] h-[200px]"
+                  />
+                </div>
+                <div className="text-[11px] text-ink-500 mt-2">
+                  {order.payInfo.method==='alipay' ? '📱 打开支付宝 App「扫一扫」付款' : '📱 打开微信「扫一扫」付款'}
+                </div>
+                <button onClick={cancelOrder} className="mt-3 text-[12px] text-ink-400 underline">
+                  取消订单 / 换其他方式
+                </button>
               </div>
-              <div className="text-[11px] text-ink-500 mt-2">📱 打开微信「扫一扫」付款</div>
-              <button onClick={cancelOrder} className="mt-3 text-[12px] text-ink-400 underline">
-                取消订单 / 换其他方式
-              </button>
-            </div>
+            )
           )}
 
           {/* 演示模式：显示倒计时 */}

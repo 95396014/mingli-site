@@ -851,11 +851,17 @@ export default function Bazi() {
           {user && (
             <div className="flex items-center gap-2 mb-2 text-[12px]">
               {user.is_admin && <span className="tag wx-shui text-[10px]">管理员</span>}
-              {user.is_vip && <span className="tag wx-huo text-[10px]">VIP会员</span>}
-              {!user.is_admin && !user.is_vip && (user.ai_credits > 0) && <span className="tag wx-tu text-[10px]">已购次数</span>}
-              {!user.is_admin && !user.is_vip && user.ai_credits === 0 && <span className="tag wx-jin text-[10px]">普通用户</span>}
-              <span className="text-ink-500">剩余额度：</span>
-              <b className="text-primary-700">{user.is_admin ? '无限' : (user.ai_credits || 0) + ' 次'}</b>
+              {!user.is_admin && user.is_vip && user.vip_expire_at && user.vip_expire_at > Date.now() && <span className="tag wx-huo text-[10px]">VIP会员</span>}
+              {!user.is_admin && !(user.is_vip && user.vip_expire_at && user.vip_expire_at > Date.now()) && (user.ai_credits > 0) && <span className="tag wx-tu text-[10px]">已购单次额度</span>}
+              {!user.is_admin && !(user.is_vip && user.vip_expire_at && user.vip_expire_at > Date.now()) && user.ai_credits === 0 && <span className="tag wx-jin text-[10px]">未开通</span>}
+              <span className="text-ink-500">额度：</span>
+              <b className="text-primary-700">
+                {user.is_admin ? '无限' : (
+                  (user.is_vip && user.vip_expire_at && user.vip_expire_at > Date.now())
+                    ? `今日 ${Math.max(0, 3 - (user.free_daily_used||0))}/3${(user.ai_credits||0) > 0 ? ` · 单次 ${user.ai_credits}` : ''}`
+                    : `单次 ${user.ai_credits || 0} 次`
+                )}
+              </b>
               <button onClick={() => refreshUser()} className="text-[10px] text-ink-400 hover:text-primary-600 ml-1">🔄 刷新</button>
             </div>
           )}

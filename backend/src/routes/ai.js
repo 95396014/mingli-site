@@ -3,8 +3,6 @@ const axios = require('axios')
 
 const router = express.Router()
 
-const FREE_LIMIT = parseInt(process.env.FREE_DAILY_LIMIT || '0')
-
 // 动态构建系统 prompt，注入当前真实时间信息
 function buildSystemPrompt(type, ctx /* { nowISO, currYear, currYr, next5, currDateCN, currMonth } */) {
   const { nowISO, currYear, currYr, next5, currDateCN, currMonth } = ctx
@@ -138,19 +136,32 @@ function ganzhiYear(year /* number */, month /* 1-12 */, day /* 1-31 */) {
 }
 
 function canUseAi(user) {
+  // 管理员永远可以用
   if (user.is_admin) return { ok: true, type: 'admin' }
+
+  const now = Date.now()
+  const isActiveVip = user.is_vip && user.vip_expire_at && user.vip_expire_at > now
   const credits = Number(user.ai_credits) || 0
-  // VIP 用户或已购买次数的普通用户：按 ai_credits 扣减
+  const used = Number(user.free_daily_used) || 0
+  const DAILY_LIMIT = 3
+
+  // 会员优先享受每天 3 次（用完再走 credits）
+  if (isActiveVip && used < DAILY_LIMIT) {
+    return { ok: true, type: 'vip_daily', dailyLimit: DAILY_LIMIT, used }
+  }
+  // 有单次额度的，不管是不是会员都能扣
   if (credits > 0) {
-    return { ok: true, type: user.is_vip ? 'vip' : 'paid', credits }
+    return { ok: true, type: 'paid', credits }
   }
-  // 免费用户：给 3 次免费体验
-  const FREE_TRIAL = 3
-  const used = user.free_daily_used || 0
-  if (used >= FREE_TRIAL) {
-    return { ok: false, reason: `免费体验已用完（共 ${FREE_TRIAL} 次），请开通会员或购买次数包后使用。` }
+  // 会员但今天 3 次用完 + 没买过单次额度 → 不让用
+  if (isActiveVip) {
+    return { ok: false, reason: `今日会员 3 次额度已用完，请明天再来，或购买「单次额度 ¥36」继续解读。` }
   }
-  return { ok: true, type: 'free_trial', limit: FREE_TRIAL, used }
+  // 非会员 + 没买过单次额度 → 完全不让用，引导付费
+  return {
+    ok: false,
+    reason: '您还没有开通会员或购买单次额度。请前往会员中心：7天会员 ¥166 / 月会员 ¥600 / 年会员 ¥5200 / 单次额度 ¥36'
+  }
 }
 
 router.post('/interpret', async (req, res) => {
@@ -269,51 +280,64 @@ ${JSON.stringify(payload, null, 2)}
   // 安全扣次和日志（包裹在 try-catch 中，防止数据库故障导致 502）
   const tsNow = Date.now()
   try {
-    if (auth.type === 'free_trial') {
+    if (auth.type === 'vip_daily') {
       await db.prepare('UPDATE users SET free_daily_used = free_daily_used + 1, updated_at = ? WHERE id = ?').run(tsNow, req.user.id)
-    } else if (auth.type === 'vip' || auth.type === 'paid') {
+    } else if (auth.type === 'paid') {
       await db.prepare('UPDATE users SET ai_credits = MAX(0, ai_credits - 1), updated_at = ? WHERE id = ?').run(tsNow, req.user.id)
     }
+    // admin 类型不扣次
     await db.prepare('INSERT INTO ai_logs (user_id,type,prompt,tokens_used,created_at) VALUES (?,?,?,?,?)')
       .run(req.user.id, type, JSON.stringify({ question }).slice(0, 500), tokens, tsNow)
   } catch (dbErr) {
     console.error('[deepseek] 数据库操作失败（不影响返回内容）:', dbErr.message)
   }
 
-  // 查询最新额度（也包裹 try-catch）
+  // 查询最新额度
   let remain = 0
   let aiCredits = 0
   let freeUsed = 0
+  let dailyLimit = 3
   try {
-    const updated = await db.prepare('SELECT ai_credits, free_daily_used FROM users WHERE id = ?').get(req.user.id) || {}
+    const updated = await db.prepare('SELECT ai_credits, free_daily_used, is_vip, vip_expire_at FROM users WHERE id = ?').get(req.user.id) || {}
     aiCredits = Number(updated.ai_credits) || 0
     freeUsed = Number(updated.free_daily_used) || 0
-    remain = auth.type === 'admin' ? 9999 : Math.max(0, aiCredits)
+    const now = Date.now()
+    const isActiveVip = updated.is_vip && updated.vip_expire_at && Number(updated.vip_expire_at) > now
+    if (auth.type === 'admin') {
+      remain = 9999
+    } else if (auth.type === 'vip_daily') {
+      remain = Math.max(0, dailyLimit - freeUsed) + aiCredits
+    } else {
+      remain = Math.max(0, aiCredits)
+    }
   } catch {
-    remain = auth.type === 'admin' ? 9999 : (Number(req.user.ai_credits) || 0)
+    remain = auth.type === 'admin' ? 9999 : Math.max(0, Number(req.user.ai_credits) || 0)
     aiCredits = Number(req.user.ai_credits) || 0
     freeUsed = Number(req.user.free_daily_used) || 0
   }
 
   res.json({
     content, tokens, remain, authType: auth.type,
-    aiCredits, freeUsed
+    aiCredits, freeUsed, dailyLimit
   })
 })
 
 router.get('/quota', (req, res) => {
   const info = canUseAi(req.user)
+  const now = Date.now()
+  const isActiveVip = req.user.is_vip && req.user.vip_expire_at && req.user.vip_expire_at > now
   res.json({
-    freeDailyLimit: FREE_LIMIT,
-    // vipDailyLimit 已取消，会员改为按 ai_credits 总额度扣减，不再每日重置
-    vipDailyLimit: null,
-    freeEnabled: FREE_LIMIT > 0,
-    freeUsed: req.user.free_daily_used || 0,
-    freeRemain: Math.max(0, FREE_LIMIT - (req.user.free_daily_used || 0)),
-    isVip: !!req.user.is_vip,
+    isVip: !!isActiveVip,
     isAdmin: !!req.user.is_admin,
     authType: info.type,
-    aiCredits: req.user.ai_credits || 0
+    dailyLimit: 3,
+    dailyUsed: Number(req.user.free_daily_used) || 0,
+    dailyRemain: isActiveVip ? Math.max(0, 3 - (Number(req.user.free_daily_used) || 0)) : 0,
+    aiCredits: Number(req.user.ai_credits) || 0,
+    vipExpireAt: req.user.is_vip && req.user.vip_expire_at ? Number(req.user.vip_expire_at) : null,
+    // 前端显示时可直接用
+    canUse: info.ok,
+    reason: info.reason || ''
   })
 })
 
