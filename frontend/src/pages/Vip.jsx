@@ -11,6 +11,35 @@ export default function Vip() {
   const [payStatus, setPayStatus] = useState('')
   const [loading, setLoading] = useState(false)
   const [poll, setPoll] = useState(false)
+  const [contactOpen, setContactOpen] = useState(false)
+  const [wechatCopied, setWechatCopied] = useState(false)
+  const WECHAT_ID = 'YiGeHuiZi_'
+
+  function copyWechat() {
+    const text = WECHAT_ID
+    // 优先使用 Clipboard API（HTTPS/安全上下文），否则用 textarea + execCommand 兼容
+    const fallback = () => {
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = text; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.opacity='0'
+        document.body.appendChild(ta); ta.select()
+        const ok = document.execCommand('copy')
+        document.body.removeChild(ta)
+        if (!ok) throw new Error('execCommand failed')
+        setWechatCopied(true); setTimeout(()=>setWechatCopied(false), 1800)
+      } catch {
+        // 最差方案：prompt 提示用户手动复制
+        window.prompt('请手动复制微信号：', text)
+      }
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text)
+        .then(() => { setWechatCopied(true); setTimeout(()=>setWechatCopied(false), 1800) })
+        .catch(fallback)
+    } else {
+      fallback()
+    }
+  }
   useEffect(() => { (async () => { const {data} = await api.get('/vip/plans'); setPlans(data.plans) })() }, [])
 
   useEffect(() => {
@@ -36,7 +65,19 @@ export default function Vip() {
       setOrder(data); setPoll(true)
       setPayStatus('请用支付宝 App 扫描下方二维码完成支付（5 分钟内有效）')
     } catch (e) {
-      alert(e.response?.data?.error || e.message)
+      const rawErr = e.response?.data?.error || e.message || ''
+      const code = e.response?.data?.code
+      const status = e.response?.status
+      // 支付宝环境变量缺失 / 后端 5xx 配置类错误 —— 一律走"联系管理员充值"的友好弹窗，附一键复制微信号
+      if (code === 'ALIPAY_NOT_CONFIGURED'
+        || /ALIPAY|未配置|环境变量|gateway|拉取环境变量/.test(rawErr)
+        || (status && status >= 500 && status < 600)
+      ) {
+        setContactOpen(true)
+      } else {
+        // 其他错误（例如"请先登录""套餐不存在"等）继续直接提示
+        alert(rawErr)
+      }
     } finally {
       setLoading(false)
     }
@@ -48,6 +89,49 @@ export default function Vip() {
 
   return (
     <div className="pb-4">
+      {/* 支付宝未配置/充值咨询弹窗 */}
+      {contactOpen && (
+        <div className="fixed inset-0 z-50 bg-black/55 flex items-center justify-center p-5" onClick={()=>setContactOpen(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl" onClick={e=>e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-ink-100 flex items-center justify-between">
+              <div className="font-bold font-song text-[16px] text-ink-900">💳 充值通道</div>
+              <button onClick={()=>setContactOpen(false)} className="text-ink-400 text-2xl leading-none">×</button>
+            </div>
+            <div className="px-5 py-5 space-y-3">
+              <div className="text-[14px] text-ink-700 leading-relaxed">
+                拉取环境变量失败，请联系管理员充值。
+              </div>
+              <div
+                onClick={copyWechat}
+                className="cursor-pointer select-all rounded-xl border-2 border-dashed border-blue-400 bg-blue-50/60 px-4 py-3 flex items-center justify-between active:scale-[0.99] transition"
+                title="点击复制微信号">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="text-green-500 text-[22px] shrink-0">💬</div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-ink-500">点击复制WeChat</div>
+                    <div className="font-bold text-[15px] text-blue-700 break-all tracking-wide">
+                      {WECHAT_ID}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-[11px] shrink-0 ml-3">
+                  {wechatCopied
+                    ? <span className="bg-green-500 text-white rounded-full px-2.5 py-1 font-semibold shadow-sm">✓ 已复制</span>
+                    : <span className="bg-blue-500 text-white rounded-full px-2.5 py-1 font-semibold shadow-sm">复制</span>
+                  }
+                </div>
+              </div>
+              <div className="text-[11px] text-ink-400 pt-1 text-center">
+                长按/点击微信号即可复制，打开微信添加好友后联系管理员充值
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-ink-100 flex gap-2 justify-end bg-ink-50/60">
+              <button onClick={()=>setContactOpen(false)} className="btn-mo !py-2 !px-4 text-[13px]">我知道了</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 顶部宣传 */}
       <div className="rounded-2xl p-5 mb-3 text-white relative overflow-hidden"
         style={{background:'linear-gradient(135deg,#8B4513 0%,#D2691E 40%,#DAA520 100%)'}}>

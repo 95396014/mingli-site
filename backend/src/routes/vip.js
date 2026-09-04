@@ -38,7 +38,10 @@ router.post('/order/create', async (req, res) => {
     console.warn('[alipay] 配置不完整：', cfg.reason)
     await db.prepare("UPDATE orders SET status='cancelled', updated_at=? WHERE id=?").run(Date.now(), orderId)
     return res.status(500).json({
-      error: `支付宝未配置完成（${cfg.reason}），请联系管理员配置 ALIPAY_* 环境变量。`
+      code: 'ALIPAY_NOT_CONFIGURED',
+      reason: cfg.reason,
+      wechat: 'YiGeHuiZi_',
+      error: `拉取环境变量失败（${cfg.reason}），请联系管理员充值。`,
     })
   }
 
