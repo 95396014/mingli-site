@@ -71,7 +71,8 @@ function buildSystemPrompt(type, ctx /* { nowISO, currYear, currYr, next5, currD
 4. 使用 Markdown 格式，层级清晰，总字数 **1800-2800字**
 5. 大运流年部分必须详细具体，逐年分析，给出明确的吉凶判断
 6. **财运专题是核心重点**，必须详细展开，用具体年份和事件说明
-7. **严禁把当前公历年写成 ${currYear - 2} 或其他年份**，必须以 ${currYear} 年作为基准`
+7. **严禁把当前公历年写成 ${currYear - 2} 或其他年份**，必须以 ${currYear} 年作为基准
+8. **五行分值严格引用排盘数据**：任何提到五行分数、得分的地方，**必须一字不差地使用下面 user 消息中【五行分值权威数据】段落给出的 wxScore 值（木火土金水顺序保留 1 位小数），绝对禁止自己重新累加或估计**
   }
 
   if (type === 'meihua') {
@@ -186,11 +187,21 @@ router.post('/interpret', async (req, res) => {
   const timeCtx = { nowISO, currYear, currYr, next5, currDateCN, currMonth }
   const systemPrompt = buildSystemPrompt(type, timeCtx)
 
+  // 八字类型：单独把前端算好的五行分值/旺衰单独高亮，防止 AI 读 JSON 时自己重算一遍和 UI 展示不一致
+  const wxAuthBlock = type === 'bazi' && payload && payload.wxScore
+    ? `\n【五行分值权威数据 - 写五行相关段落必须严格引用此表，不得重算】\n` +
+      ['木','火','土','金','水'].map(k => `- ${k}：${Number(payload.wxScore[k]||0).toFixed(1)} 分`).join('\n') +
+      (payload.wxPercent ? '\n占比：' + ['木','火','土','金','水'].map(k => `${k}${Math.round((payload.wxPercent[k]||0)*100)}%`).join(' / ') : '') +
+      (payload.wangLevel ? `\n日主旺衰判定：${payload.wangLevel}（得令 ${Number(payload.deLingScore||0).toFixed(1)} / 得地 ${Number(payload.deDiScore||0).toFixed(1)} / 得助 ${Number(payload.deZhuScore||0).toFixed(1)} / 合计 ${Number(payload.totalWangScore||0).toFixed(1)}）` : '') +
+      (payload.yongShen?.yong ? `\n用神：${payload.yongShen.yong.join('、')}  喜神：${payload.yongShen.xi.join('、')}  忌神：${payload.yongShen.ji.join('、')}` : '') +
+      `\n四柱：${payload.pillars?.map(p=>p.ganzhi).join(' · ') || ''}\n`
+    : ''
+
   const userPrompt =
 `【用户求问】${question || '请基于排盘信息综合解读'}
 【排盘数据（JSON）】
 ${JSON.stringify(payload, null, 2)}
-
+${wxAuthBlock}
 【重要时间锚点 - 必须以此为准】
 解读时的真实当前日期：${currDateCN}
 "今年"特指：${currYear} 年（${currYr}）

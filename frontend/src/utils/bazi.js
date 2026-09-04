@@ -156,14 +156,49 @@ export function calculateBazi({
   const tzAdjustMin = (lngVal - 120) * 4
   d.setMinutes(d.getMinutes() + tzAdjustMin)
 
-  // ====== Step 4：早晚子时（对 23:00-23:59 晚子时的日柱处理流派切换）======
-  // lunar-javascript 默认：23 点后时柱算子时，但日柱仍使用当日日期（"晚子时不换日"，也就是绝大多数软件默认的 OFF 流派）。
-  // 流派 ON（zaoWanZi=true）：晚子时(23-24点) = 第二天的早子时，所以日期要 +1 天再去算八字，日柱也会同步变成下一天干支。
-  let wanZiShifted = false
+  // ====== Step 4：早晚子时（对 23:00-23:59 晚子时的日柱/时柱处理流派切换）======
+  // lunar-javascript 对 23 点的默认行为：日柱保留当天，但时柱天干按下一天的日干推（= "夜子时" 流派，也是当今多数软件的默认）。
+  // 这就是为什么 zaWanZi=false 下己卯日 23:30 会得到 己卯日 + 丙子时（庚日→丙子，庚是己卯的次日日干）。
+  //
+  // 我们在 zaWanZi=true（启用"晚子时流派=换日"）时想要的是：
+  //   - 日柱换为次日（庚辰→辛巳）
+  //   - 但时柱天干必须按"换日前的当日日干"（也就是庚辰日干，而非辛巳的下一天壬午日干）
+  //     去推子时，即乙庚丙作初→丙子。
+  // 若只简单把日期 +1 再送入 lunar，lunar 会对 23 点再次按下一天日干推时干，
+  // 等于"累计 shift 了两天"（庚辰→辛巳→壬午），导致时干错一位。
+  // 因此：
+  //   A. zaWanZi=true + 23 点：先记录 shift 前日干 → d+1 → 然后用"原日干+子"手动覆写时柱。
+  //   B. zaWanZi=false + 23 点：同样用"次日日干+子"手动覆写时柱，绕开 lunar 内部不透明逻辑，
+  //      保证与用户实测（己卯→丙子）完全一致且版本升级不回归。
+  //   C. 00~22 点：保持 lunar 默认（lunar 对这一时段行为与五鼠遁完全吻合）。
   const h = d.getHours()
-  if (!!zaoWanZi && h === 23) {
-    d.setDate(d.getDate() + 1)
-    wanZiShifted = true
+  let wanZiShifted = false
+  let timePillarOverridden = false
+  let overrideGan = '', overrideZhi = ''
+
+  if (h === 23) {
+    // 先取"当前 d"的日柱干支（= zaWanZi=false 模式下应该展示的日柱）
+    const s0 = Solar.fromDate(d)
+    const ec0 = s0.getLunar().getEightChar()
+    const todayGan = ec0.getDayGan()
+    // zaWanZi=true：日柱要 shift 一天，时柱按今天日干算子时
+    // zaWanZi=false：日柱不 shift，时柱按"今天次日干"算子时（= lunar 默认的"夜子时=次日日干算子"）
+    let ganForZi = ''
+    if (!!zaoWanZi) {
+      ganForZi = todayGan             // 换日了，但时干仍用原来的当天日干（早子时派）
+      d.setDate(d.getDate() + 1)
+      wanZiShifted = true
+    } else {
+      // 找 todayGan 的下一个日干
+      const i = (GAN.indexOf(todayGan) + 1) % 10
+      ganForZi = GAN[i]
+    }
+    // 五鼠遁：求指定日干 + 子时 的时干
+    const startMap = { 甲:'甲', 己:'甲', 乙:'丙', 庚:'丙', 丙:'戊', 辛:'戊', 丁:'庚', 壬:'庚', 戊:'壬', 癸:'壬' }
+    const startIdx = GAN.indexOf(startMap[ganForZi])
+    overrideGan = GAN[(startIdx + 0) % 10]   // zhiIdx(子) = 0
+    overrideZhi = '子'
+    timePillarOverridden = true
   }
 
   const solar = Solar.fromDate(d)
@@ -179,25 +214,10 @@ export function calculateBazi({
   let timeGan = ec.getTimeGan()
   let timeZhi = ec.getTimeZhi()
 
-  // 特殊修复：当 zaWanZi=true + 晚子时 + lunar-javascript 已经把日柱换了，我们不想再换一次（所以通过计算时用 shifted date 让库自己换日），上面已处理
-  // 另一个场景：当 zaWanZi=false 时，用户希望 23 点日柱仍=当天 — 但 lunar-javascript 某些版本在 23 点后会自动换日
-  // （即"库默认=早子时流派"）。这种情况下我们需要把日期回退 1 天让日柱回到当天。
-  if (!zaoWanZi && h === 23) {
-    // 用"未加 1 天"的基准日期再算一次日柱作为参考
-    const d2 = new Date(d.getTime())
-    if (wanZiShifted) {
-      // 不应该走到这里（zaoWanZi=false 不会 shift），防御性
-    }
-    const dBase = new Date(d2.getTime() - 86400000)
-    const ecBase = Solar.fromDate(dBase).getLunar().getEightChar()
-    const baseDayGan = ecBase.getDayGan()
-    const baseDayZhi = ecBase.getDayZhi()
-    // 如果 lunar 给出的 dayGan != 当日基准 dayGan，说明库把 23 点当"第二天"算（早子时流派），我们强制换回当天
-    // 怎么判断"当天"？23 点的"当天"应该是 date.getDate()-1 之前的日柱
-    // 但 lunar 内部默认对 23 点行为到底如何？用户实测 23:30 己卯日+丙子时，没有换日（己卯=当天，不是次日庚辰）。所以默认就已经是 zaWanZi=false 流派。
-    // 简单起见：zaoWanZi=false 时什么都不做；只在 zaoWanZi=true 时 +1 天。
-    // —— 保留 baseDayGan/Zhi 变量引用以防 lint 警告 ——
-    void baseDayGan; void baseDayZhi
+  // 对于 23:00-23:59，直接用我们手动按五鼠遁算好的时柱覆写，彻底绕开 lunar 内部 shift 细节
+  if (timePillarOverridden) {
+    timeGan = overrideGan
+    timeZhi = overrideZhi
   }
 
   const pillars = [
