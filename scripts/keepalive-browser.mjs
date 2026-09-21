@@ -1,7 +1,9 @@
 // 心跳保活（真实浏览器版）
-// 原因：SnapDeploy 容器域名被 Cloudflare 人机验证保护（cf-mitigated: challenge），
-// 普通 curl 请求会被 403 拦截、根本到不了容器。真实 Chromium 能执行验证 JS 自动通过，
-// 从而让请求到达容器，实现：① 容器不被休眠 ② Supabase 数据库保持活跃。
+// 背景：SnapDeploy 免费容器 15 分钟无访问会休眠。休眠后直接请求会被拦截页挡住
+// （curl 得到 403 "Just a moment"；真实浏览器看到 "Container is Sleeping" 冷启动页），
+// 冷启动约需 45 秒，期间平台会自动刷新/跳转，容器就绪后才返回真实内容。
+// 因此用真实 Chromium 访问，并给足冷启动时间（最多 120 秒）、主动轮询刷新，
+// 实现：① 唤醒并保活容器 ② 顺带保持 Supabase 数据库活跃。
 import { chromium } from 'playwright'
 
 const TARGET = process.env.KEEPALIVE_URL ||
@@ -22,42 +24,44 @@ const ctx = await browser.newContext({
 
 const page = await ctx.newPage()
 
+// 总预算 120 秒（冷启动 ~45 秒，留足余量）
+const deadline = Date.now() + 120000
+let ok = false
+let lastHint = ''
+
 try {
-  console.log('[keepalive] 打开:', TARGET)
-  await page.goto(TARGET, { waitUntil: 'domcontentloaded', timeout: 45000 })
+  while (Date.now() < deadline) {
+    try {
+      await page.goto(TARGET, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    } catch (e) {
+      // 跳转/刷新途中可能抛超时，忽略后继续重试
+      console.log('[keepalive] goto 提示:', e.message.slice(0, 80))
+    }
 
-  // 最多等 50 秒，轮询验证是否通过（通过后 /api/health 返回 {"ok":true...}）
-  let ok = false
-  for (let i = 0; i < 25; i++) {
+    await sleep(3000)
+
     const body = (await page.locator('body').innerText({ timeout: 3000 }).catch(() => '')).trim()
-    const title = await page.title().catch(() => '')
+    const title = (await page.title().catch(() => '')).trim()
+    lastHint = title || body.slice(0, 80)
 
-    if (body.includes('"ok"') || body.includes('"ok":true')) {
+    // 容器已就绪：/api/health 返回 {"ok":true,...}
+    if (body.includes('"ok"')) {
       ok = true
-      console.log('[keepalive] ✅ 已通过验证并到达容器，响应:', body.slice(0, 120))
+      console.log('[keepalive] ✅ 容器已就绪，响应:', body.slice(0, 120))
       break
     }
 
-    // 极少数情况下出现可点击的 Turnstile 复选框，尝试点一下
-    if (title.includes('moment') || body.includes('challenge')) {
-      const frames = page.frames()
-      for (const f of frames) {
-        try {
-          const cb = f.locator('input[type="checkbox"]').first()
-          if (await cb.isVisible({ timeout: 1000 }).catch(() => false)) {
-            await cb.click({ timeout: 2000 })
-            console.log('[keepalive] 点击了验证复选框')
-          }
-        } catch {}
-      }
+    // 仍在休眠/冷启动/验证中，打印状态后等待平台自动刷新；并主动 reload 兜底
+    const sleeping = /sleep|waking|starting|cold|moment|验证|启动|稍候/i.test(body + ' ' + title)
+    console.log(`[keepalive] 等待中…（${sleeping ? '冷启动/验证页' : '未知页'}）当前标题: "${title}"`)
+    await sleep(7000)
+    if (sleeping) {
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {})
     }
-
-    await sleep(2000)
   }
 
   if (!ok) {
-    const t = await page.title().catch(() => '')
-    console.error('[keepalive] ❌ 超时未通过验证，最终页面标题:', t)
+    console.error('[keepalive] ❌ 120 秒内未等到容器就绪，最后状态:', lastHint)
     process.exit(1)
   }
 } catch (e) {
