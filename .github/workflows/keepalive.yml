@@ -8,10 +8,27 @@ on:
 jobs:
   ping:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Ping health endpoint
-        run: |
-          echo "访问健康检查接口..."
-          curl -fsS --max-time 30 https://5860bazi-1676c.containers.snapdeploy.app/api/health
-          echo ""
-          echo "保活请求完成"
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache Playwright browser
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright
+
+      - name: Install Chromium (first run only)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx -y playwright@1.48.2 install chromium --with-deps
+
+      - name: Install Playwright package
+        run: npm install playwright@1.48.2 --no-save --no-audit --no-fund
+
+      - name: Visit site with real browser
+        run: node scripts/keepalive-browser.mjs
