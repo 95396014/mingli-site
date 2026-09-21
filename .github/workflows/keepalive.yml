@@ -1,0 +1,17 @@
+name: keepalive
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          echo "访问健康检查接口..."
+          curl -fsS --max-time 30 https://5860bazi-1676c.containers.snapdeploy.app/api/health
+          echo ""
+          echo "保活请求完成"
