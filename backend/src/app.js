@@ -177,5 +177,23 @@ try { require('dotenv').config() } catch {}
       const al = require('./config/alipay').getDebugSummary()
       console.log(`[mingli] 支付宝配置: appId=${al.appIdSet ? '✓***'+al.appIdTail : '未配置'} 私钥=${al.privateKeySet ? '✓' : '✗'} 公钥=${al.publicKeySet ? '✓' : '✗'} notify=${al.notifyUrlSet ? al.gateway : '未配置'}`)
     } catch {}
+
+    // 心跳保活：防止 Supabase 数据库因 1 周无活动被暂停
+    // 设置 SELF_URL 环境变量为 Koyeb 分配的域名后自动生效
+    if (process.env.SELF_URL) {
+      const selfUrl = process.env.SELF_URL.replace(/\/$/, '')
+      const pingInterval = 6 * 60 * 60 * 1000 // 6 小时
+      const doPing = () => {
+        const http = selfUrl.startsWith('https') ? require('https') : require('http')
+        const req = http.get(`${selfUrl}/api/health`, (res) => {
+          console.log(`[keepalive] ping → ${res.statusCode}`)
+        })
+        req.on('error', (e) => console.error(`[keepalive] 失败: ${e.message}`))
+        req.setTimeout(10000, () => req.destroy())
+      }
+      doPing()
+      setInterval(doPing, pingInterval)
+      console.log(`[keepalive] 心跳保活已启动，间隔 6h，目标: ${selfUrl}`)
+    }
   })
 })()

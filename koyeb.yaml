@@ -1,0 +1,28 @@
+# Koyeb 部署配置（通过 GitHub 关联仓库后自动读取）
+# 文档: https://www.koyeb.com/docs/deploy-with-koyeb-yaml
+
+services:
+  - name: mingli-site
+    # 从 Dockerfile 构建（比 buildpack 更稳，不依赖 Koyeb 的 Node 版本检测）
+    docker:
+      dockerfile: Dockerfile
+    # Koyeb 免费层只能跑 1 个 nano 实例
+    instance_type: nano
+    # 区域选法兰克福（离国内比华盛顿稍近）
+    regions:
+      - fra
+    # 健康检查（Koyeb 会定期 ping，确保服务存活）
+    health_check:
+      path: /api/health
+      port: 8080
+    # 环境变量在 Koyeb 控制台 Settings → Environment 页面配置
+    # 不要在这里写真实密钥！
+    env:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+    # 自动从 main 分支部署
+    routes:
+      - path: /
+        port: 8080

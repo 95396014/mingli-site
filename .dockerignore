@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+dist
+**/dist
+frontend/.vite
+.env
+.env.*
+**/.env
+**/.env.*
+*.pem
+*.key
+*.db
+*.db-*
+.git
+.gitignore
+backend/src/data/
+backend/cert/

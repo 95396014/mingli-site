@@ -243,11 +243,15 @@ async function initDB() {
 
     if (mode === 'pg') {
       const { Pool } = require('pg')
+      const dbUrl = process.env.DATABASE_URL
+      // Railway / Supabase / Neon 等云端 PG 都需要 SSL
+      const needsSSL = dbUrl.includes('railway.app') ||
+                       dbUrl.includes('supabase.co') ||
+                       dbUrl.includes('neon.tech') ||
+                       process.env.PG_SSL === '1'
       const pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: process.env.DATABASE_URL.includes('railway.app')
-          ? { rejectUnauthorized: false }
-          : undefined
+        connectionString: dbUrl,
+        ssl: needsSSL ? { rejectUnauthorized: false } : undefined
       })
       // 创建单 client 长连接池
       console.log('[db] 使用 PostgreSQL 云端数据库，数据永久保存')
