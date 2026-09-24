@@ -1,0 +1,22 @@
+name: supabase-keepalive
+
+# 免费版 Supabase 连续 7 天无活动会暂停，直连数据库执行 SELECT 1 保活
+on:
+  schedule:
+    - cron: '0 4 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Supabase
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::未配置 SUPABASE_DB_URL secret"
+            exit 1
+          fi
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "SELECT 1 AS keepalive, now();"
