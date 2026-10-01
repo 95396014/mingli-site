@@ -5,7 +5,6 @@
 const bcrypt = require('bcryptjs')
 
 // ==================== 数据库选择 ====================
-let _dbPromise = null
 
 function detectMode() {
   const dbu = process.env.DATABASE_URL
@@ -236,9 +235,8 @@ function norm(args) {
 }
 
 // ==================== 初始化入口 ====================
-async function initDB() {
-  if (_dbPromise) return _dbPromise
-  _dbPromise = (async () => {
+// 单次初始化尝试（失败会抛错，由外层 initDB 负责重试）
+async function initOnce() {
     const mode = detectMode()
 
     if (mode === 'pg') {
@@ -251,7 +249,9 @@ async function initDB() {
                        process.env.PG_SSL === '1'
       const pool = new Pool({
         connectionString: dbUrl,
-        ssl: needsSSL ? { rejectUnauthorized: false } : undefined
+        ssl: needsSSL ? { rejectUnauthorized: false } : undefined,
+        // 云端数据库故障时快速失败（默认可能挂几十秒），好让上层走重试逻辑
+        connectionTimeoutMillis: 8000
       })
       // 创建单 client 长连接池
       console.log('[db] 使用 PostgreSQL 云端数据库，数据永久保存')
@@ -281,8 +281,35 @@ async function initDB() {
     console.log('[db] ⚠️  使用本地 SQLite（非持久化），存储位置:', wdb.DB_PATH)
     console.log('[db] 强烈建议在 Railway「+ Add」中添加 PostgreSQL 服务，即可自动使用云端数据库（无需手动配置连接字符串）。')
     return wdb
-  })()
-  return _dbPromise
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+
+// 数据库实例与初始化 Promise：失败后每 5 秒自动重试，直到成功。
+// 关键：initDB() 永远不会 reject —— 云端数据库短暂故障（如 Supabase 宕机）
+// 时不会阻塞 HTTP 服务启动，数据库恢复后自动连上。
+let _dbInstance = null
+let _dbInitPromise = null
+
+function initDB() {
+  if (_dbInstance) return Promise.resolve(_dbInstance)
+  if (!_dbInitPromise) {
+    _dbInitPromise = (async () => {
+      let attempt = 0
+      while (!_dbInstance) {
+        attempt++
+        try {
+          _dbInstance = await initOnce()
+          console.log(`[db] ✅ 数据库就绪（第 ${attempt} 次尝试）`)
+        } catch (e) {
+          console.error(`[db] 第 ${attempt} 次初始化失败：${e && e.message}，5 秒后重试…`)
+          await sleep(5000)
+        }
+      }
+      return _dbInstance
+    })()
+  }
+  return _dbInitPromise
 }
 
 function getDB() { return null }

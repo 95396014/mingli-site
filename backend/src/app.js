@@ -16,11 +16,21 @@ const { authMiddleware, requireVip, requireAdmin } = require('./middleware/auth.
 try { require('dotenv').config() } catch {}
 
 ;(async () => {
-  await initDB()
+  // 数据库在后台初始化（失败会自动重试，永不阻塞）。
+  // 重要：不能 await initDB() —— 云端数据库故障时若阻塞在这里，
+  // app.listen() 永远不会执行，容器端口无服务，托管平台网关会报重定向循环/502。
+  initDB().catch(() => {})
 
   const app = express()
+  // 托管平台（SnapDeploy/Render/Railway）都在反向代理后面，信任第一层代理
+  app.set('trust proxy', 1)
   app.use(cors())
   app.use(express.json())
+
+  // 健康检查必须在 dbMiddleware 之前：数据库挂了端口也得活着，
+  // 否则平台边缘健康检查失败会导致网关 308 重定向死循环。
+  app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }))
+
   app.use(dbMiddleware)
 
   // 全局错误保护：防止未捕获异常导致 Railway 返回 502
@@ -35,8 +45,6 @@ try { require('dotenv').config() } catch {}
   process.on('unhandledRejection', (reason) => {
     console.error('[node] 未处理的 Promise 拒绝:', reason?.message || reason)
   })
-
-  app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }))
 
   // 公开：会员套餐列表（价格与后端一致，避免前端显示价≠下单价）
   const VIP_PLANS = [
@@ -178,22 +186,5 @@ try { require('dotenv').config() } catch {}
       console.log(`[mingli] 支付宝配置: appId=${al.appIdSet ? '✓***'+al.appIdTail : '未配置'} 私钥=${al.privateKeySet ? '✓' : '✗'} 公钥=${al.publicKeySet ? '✓' : '✗'} notify=${al.notifyUrlSet ? al.gateway : '未配置'}`)
     } catch {}
 
-    // 心跳保活：防止 Supabase 数据库因 1 周无活动被暂停
-    // 设置 SELF_URL 环境变量为 Koyeb 分配的域名后自动生效
-    if (process.env.SELF_URL) {
-      const selfUrl = process.env.SELF_URL.replace(/\/$/, '')
-      const pingInterval = 6 * 60 * 60 * 1000 // 6 小时
-      const doPing = () => {
-        const http = selfUrl.startsWith('https') ? require('https') : require('http')
-        const req = http.get(`${selfUrl}/api/health`, (res) => {
-          console.log(`[keepalive] ping → ${res.statusCode}`)
-        })
-        req.on('error', (e) => console.error(`[keepalive] 失败: ${e.message}`))
-        req.setTimeout(10000, () => req.destroy())
-      }
-      doPing()
-      setInterval(doPing, pingInterval)
-      console.log(`[keepalive] 心跳保活已启动，间隔 6h，目标: ${selfUrl}`)
-    }
   })
 })()
