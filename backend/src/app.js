@@ -31,7 +31,23 @@ try { require('dotenv').config() } catch {}
   // 否则平台边缘健康检查失败会导致网关 308 重定向死循环。
   app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }))
 
-  app.use(dbMiddleware)
+  // 前端静态页面 / SPA 回退也必须在 dbMiddleware 之前：
+  // 即使数据库连不上（如云端数据库冷启动、IPv6 不通），网关探测 "/" 也必须拿到 200，
+  // 否则容器永远过不了健康检查、一直停在平台的"正在唤醒"页。
+  const FRONT_DIST = path.join(__dirname, '../../frontend/dist')
+  try {
+    const fs = require('fs')
+    if (fs.existsSync(FRONT_DIST)) {
+      app.use(express.static(FRONT_DIST))
+      app.get('*', (req, res, next) => {
+        if (req.path.startsWith('/api')) return next()
+        res.sendFile(path.join(FRONT_DIST, 'index.html'))
+      })
+    }
+  } catch {}
+
+  // 只有 /api 请求需要等待数据库就绪
+  app.use('/api', dbMiddleware)
 
   // 全局错误保护：防止未捕获异常导致 Railway 返回 502
   app.use((err, req, res, next) => {
@@ -162,18 +178,6 @@ try { require('dotenv').config() } catch {}
   app.use('/api/ai', authMiddleware, aiRoutes)
   app.use('/api/vip', authMiddleware, vipRoutes)
   app.use('/api/admin', authMiddleware, requireAdmin, adminRoutes)
-
-  const FRONT_DIST = path.join(__dirname, '../../frontend/dist')
-  try {
-    const fs = require('fs')
-    if (fs.existsSync(FRONT_DIST)) {
-      app.use(express.static(FRONT_DIST))
-      app.get('*', (req, res, next) => {
-        if (req.path.startsWith('/api')) return next()
-        res.sendFile(path.join(FRONT_DIST, 'index.html'))
-      })
-    }
-  } catch {}
 
   // 兼容 Railway/Koyeb：它们常传 PORT=10000/3000/8080；Render 也是。
   const PORT = Number(process.env.PORT) || Number(process.env.DEV_PORT) || 3001
