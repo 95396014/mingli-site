@@ -184,6 +184,7 @@ try { require('dotenv').config() } catch {}
   // Host 必须监听 0.0.0.0 才能被托管平台的外部网关发现
   const HOST = process.env.HOST || '0.0.0.0'
   app.listen(PORT, HOST, () => {
+    console.log(`[mingli] BUILD_MARKER=20261010-static-before-db`)
     console.log(`[mingli] 后端已启动: http://${HOST}:${PORT}`)
     try {
       const al = require('./config/alipay').getDebugSummary()
